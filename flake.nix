@@ -54,6 +54,9 @@
               just
               nixfmt-rfc-style
               rust-analyzer
+              grpcurl
+              jq
+              unixtools.xxd
             ]
             ++ nativeBuildInputs;
 
