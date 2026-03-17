@@ -11,6 +11,7 @@ use ldk_server::ldk_node::bitcoin::Network;
 use ldk_server::ldk_node::config::Config as LdkNodeConfig;
 use ldk_server::ldk_node::lightning::ln::msgs::SocketAddress;
 use ldk_server::ldk_node::lightning_invoice::Bolt11Invoice;
+use ldk_server::ldk_node::liquidity::LSPS4ServiceConfig;
 use ldk_server::ldk_node::{Builder, Node};
 
 // ---------------------------------------------------------------------------
@@ -78,7 +79,9 @@ pub struct MdkServerHandle {
 }
 
 impl MdkServerHandle {
-	pub async fn start(bitcoind: &TestBitcoind, webhook_port: Option<u16>) -> Self {
+	pub async fn start(
+		bitcoind: &TestBitcoind, webhook_port: Option<u16>, lsp: Option<&LspNode>,
+	) -> Self {
 		#[allow(deprecated)]
 		let storage_dir = tempfile::tempdir().unwrap().into_path();
 
@@ -90,6 +93,14 @@ impl MdkServerHandle {
 		let rpc_address = format!("{rpc_host}:{rpc_port}");
 
 		let webhook_secret = "aa".repeat(32); // 32 bytes as hex
+
+		let (lsp_node_id, lsp_address) = match lsp {
+			Some(l) => (l.node_id(), format!("127.0.0.1:{}", l.p2p_port)),
+			None => (
+				"0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798".to_string(),
+				"127.0.0.1:19735".to_string(),
+			),
+		};
 
 		let config = format!(
 			r#"[node]
@@ -108,6 +119,8 @@ rpc_password = "{rpc_password}"
 [mdk]
 api_address = "127.0.0.1:{api_port}"
 webhook_secret = "{webhook_secret}"
+lsp_node_id = "{lsp_node_id}"
+lsp_address = "{lsp_address}"
 "#,
 			storage_dir = storage_dir.display(),
 		);
@@ -294,6 +307,70 @@ impl PayerNode {
 }
 
 impl Drop for PayerNode {
+	fn drop(&mut self) {
+		let _ = self.node.stop();
+	}
+}
+
+// ---------------------------------------------------------------------------
+// LspNode — LSPS4 liquidity provider for JIT channel tests
+// ---------------------------------------------------------------------------
+
+pub struct LspNode {
+	pub node: Arc<Node>,
+	pub p2p_port: u16,
+	_storage_dir: PathBuf,
+}
+
+impl LspNode {
+	pub fn new(bitcoind: &TestBitcoind) -> Self {
+		#[allow(deprecated)]
+		let storage_dir = tempfile::tempdir().unwrap().into_path();
+		let p2p_port = find_available_port();
+
+		let config = LdkNodeConfig {
+			network: Network::Regtest,
+			storage_dir_path: storage_dir.to_str().unwrap().to_string(),
+			listening_addresses: Some(vec![
+				SocketAddress::from_str(&format!("127.0.0.1:{p2p_port}")).unwrap(),
+			]),
+			..Default::default()
+		};
+
+		let mut builder = Builder::from_config(config);
+		let (rpc_host, rpc_port, rpc_user, rpc_password) = bitcoind.rpc_details();
+		builder.set_chain_source_bitcoind_rpc(rpc_host, rpc_port, rpc_user, rpc_password);
+
+		let seed_path = storage_dir.join("keys_seed").to_str().unwrap().to_string();
+		builder.set_entropy_seed_path(seed_path);
+
+		builder.set_liquidity_provider_lsps4(LSPS4ServiceConfig {
+			min_channel_size_msat: 50_000_000,
+			channel_over_provisioning_ppm: 500_000,
+			forwarding_fee_proportional_millionths: 20_000,
+			channel_size_tiers: vec![],
+		});
+
+		let node = Arc::new(builder.build().unwrap());
+		node.start().unwrap();
+
+		Self { node, p2p_port, _storage_dir: storage_dir }
+	}
+
+	pub fn node_id(&self) -> String {
+		self.node.node_id().to_string()
+	}
+
+	pub fn onchain_address(&self) -> String {
+		self.node.onchain_payment().new_address().unwrap().to_string()
+	}
+
+	pub fn sync_wallets(&self) {
+		self.node.sync_wallets().unwrap();
+	}
+}
+
+impl Drop for LspNode {
 	fn drop(&mut self) {
 		let _ = self.node.stop();
 	}

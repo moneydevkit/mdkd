@@ -8,6 +8,8 @@ use serde::Deserialize;
 pub struct MdkConfig {
 	pub api_address: SocketAddr,
 	pub webhook_secret: Vec<u8>,
+	pub lsp_node_id: String,
+	pub lsp_address: String,
 }
 
 #[derive(Deserialize)]
@@ -19,6 +21,8 @@ struct MdkTomlRoot {
 struct MdkSection {
 	api_address: Option<String>,
 	webhook_secret: Option<String>,
+	lsp_node_id: Option<String>,
+	lsp_address: Option<String>,
 }
 
 pub fn load_mdk_config(config_path: &str) -> io::Result<MdkConfig> {
@@ -27,7 +31,12 @@ pub fn load_mdk_config(config_path: &str) -> io::Result<MdkConfig> {
 		io::Error::new(io::ErrorKind::InvalidData, format!("Failed to parse config: {}", e))
 	})?;
 
-	let section = root.mdk.unwrap_or(MdkSection { api_address: None, webhook_secret: None });
+	let section = root.mdk.unwrap_or(MdkSection {
+		api_address: None,
+		webhook_secret: None,
+		lsp_node_id: None,
+		lsp_address: None,
+	});
 
 	let api_address = section
 		.api_address
@@ -50,5 +59,12 @@ pub fn load_mdk_config(config_path: &str) -> io::Result<MdkConfig> {
 		},
 	};
 
-	Ok(MdkConfig { api_address, webhook_secret })
+	let lsp_node_id = section.lsp_node_id.ok_or_else(|| {
+		io::Error::new(io::ErrorKind::InvalidInput, "lsp_node_id is required")
+	})?;
+	let lsp_address = section.lsp_address.ok_or_else(|| {
+		io::Error::new(io::ErrorKind::InvalidInput, "lsp_address is required")
+	})?;
+
+	Ok(MdkConfig { api_address, webhook_secret, lsp_node_id, lsp_address })
 }

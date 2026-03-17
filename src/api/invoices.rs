@@ -21,10 +21,20 @@ pub async fn handle_create_invoice(
 			.map_err(|e| AppError::BadRequest(format!("Invalid description: {}", e)))?,
 	);
 
-	let invoice = node
-		.bolt11_payment()
-		.receive(req.amount_msat, &description, req.expiry_secs)
-		.map_err(|e| AppError::Internal(format!("Failed to create invoice: {}", e)))?;
+	let has_inbound = node
+		.list_channels()
+		.iter()
+		.any(|c| c.is_usable && c.inbound_capacity_msat >= req.amount_msat);
+
+	let invoice = if has_inbound {
+		node.bolt11_payment()
+			.receive(req.amount_msat, &description, req.expiry_secs)
+			.map_err(|e| AppError::Internal(format!("Failed to create invoice: {}", e)))?
+	} else {
+		node.bolt11_payment()
+			.receive_via_lsps4_jit_channel(Some(req.amount_msat), &description, req.expiry_secs)
+			.map_err(|e| AppError::Internal(format!("Failed to create JIT invoice: {}", e)))?
+	};
 
 	let payment_hash = invoice.payment_hash().to_string();
 	let expires_at = invoice.expires_at().map(|d| d.as_secs()).unwrap_or(0);

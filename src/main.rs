@@ -8,11 +8,14 @@ mod webhook;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::Arc;
 
 use clap::Parser;
 use hex::DisplayHex;
+use ldk_server::ldk_node::bitcoin::secp256k1::PublicKey;
 use ldk_server::ldk_node::config::Config as LdkNodeConfig;
+use ldk_server::ldk_node::lightning::ln::msgs::SocketAddress;
 use ldk_server::ldk_node::Builder;
 use ldk_server::io::persist::paginated_kv_store::PaginatedKVStore;
 use ldk_server::io::persist::sqlite_store::SqliteStore;
@@ -128,6 +131,17 @@ fn main() {
 	if let Some(url) = config_file.pathfinding_scores_source_url {
 		builder.set_pathfinding_scores_source(url);
 	}
+
+	let lsp_pubkey = PublicKey::from_str(&mdk_config.lsp_node_id).unwrap_or_else(|e| {
+		error!("Bad lsp_node_id: {e}");
+		std::process::exit(1);
+	});
+	let lsp_addr = SocketAddress::from_str(&mdk_config.lsp_address).unwrap_or_else(|e| {
+		error!("Bad lsp_address: {e}");
+		std::process::exit(1);
+	});
+	builder.set_liquidity_source_lsps4(lsp_pubkey, lsp_addr);
+	info!("LSPS4 liquidity source: {}", mdk_config.lsp_node_id);
 
 	let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
 		Ok(runtime) => Arc::new(runtime),
