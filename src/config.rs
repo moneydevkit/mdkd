@@ -1,0 +1,54 @@
+use std::net::SocketAddr;
+use std::{fs, io};
+
+use hex::FromHex;
+use serde::Deserialize;
+
+#[derive(Debug)]
+pub struct MdkConfig {
+	pub api_address: SocketAddr,
+	pub webhook_secret: Vec<u8>,
+}
+
+#[derive(Deserialize)]
+struct MdkTomlRoot {
+	mdk: Option<MdkSection>,
+}
+
+#[derive(Deserialize)]
+struct MdkSection {
+	api_address: Option<String>,
+	webhook_secret: Option<String>,
+}
+
+pub fn load_mdk_config(config_path: &str) -> io::Result<MdkConfig> {
+	let content = fs::read_to_string(config_path)?;
+	let root: MdkTomlRoot = toml::from_str(&content).map_err(|e| {
+		io::Error::new(io::ErrorKind::InvalidData, format!("Failed to parse config: {}", e))
+	})?;
+
+	let section = root.mdk.unwrap_or(MdkSection { api_address: None, webhook_secret: None });
+
+	let api_address = section
+		.api_address
+		.unwrap_or_else(|| "127.0.0.1:8080".to_string())
+		.parse::<SocketAddr>()
+		.map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+
+	let webhook_secret = match section.webhook_secret {
+		Some(hex_str) => Vec::<u8>::from_hex(&hex_str).map_err(|e| {
+			io::Error::new(
+				io::ErrorKind::InvalidInput,
+				format!("Invalid webhook_secret hex: {}", e),
+			)
+		})?,
+		None => {
+			let mut secret = vec![0u8; 32];
+			getrandom::getrandom(&mut secret)
+				.map_err(|e| io::Error::other(format!("Failed to generate webhook secret: {}", e)))?;
+			secret
+		},
+	};
+
+	Ok(MdkConfig { api_address, webhook_secret })
+}

@@ -1,0 +1,27 @@
+[package]
+name = "mdk-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ldk-server = { git = "https://github.com/moneydevkit/ldk-server", rev = "44178d75d509b0156c9e371e190292b3f4930f18" }
+ldk-server-protos = { git = "https://github.com/moneydevkit/ldk-server", rev = "44178d75d509b0156c9e371e190292b3f4930f18" }
+
+axum = { version = "0.8", features = ["json"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+rusqlite = { version = "0.31.0", features = ["bundled"] }
+hex = { package = "hex-conservative", version = "0.2.1" }
+clap = { version = "4", features = ["derive"] }
+toml = { version = "0.8", features = ["parse"] }
+log = "0.4"
+getrandom = "0.2"
+prost = "0.11.6"
+hmac = "0.12"
+sha2 = "0.10"
+
+[dev-dependencies]
+corepc-node = { version = "0.10", features = ["download", "29_0"] }
+tempfile = "3"
