@@ -32,16 +32,16 @@
 
         fenixPkgs = fenix.packages.${system};
 
-        # Dev toolchain: full stable (no musl target)
-        devToolchain = fenixPkgs.stable.toolchain;
-
-        # Build toolchain: stable + clippy/rustfmt + musl target for static builds
+        # Stable toolchain + musl target for static builds on Linux
         buildToolchain = fenixPkgs.combine (
           [
-            fenixPkgs.stable.cargo
-            fenixPkgs.stable.rustc
-            fenixPkgs.stable.clippy
-            fenixPkgs.stable.rustfmt
+            (fenixPkgs.stable.withComponents [
+              "cargo"
+              "clippy"
+              "rust-src"
+              "rustc"
+              "rustfmt"
+            ])
           ]
           ++ lib.optionals isLinux [
             fenixPkgs.targets.${muslTarget}.stable.rust-std
@@ -145,10 +145,9 @@
           checks = self.checks.${system};
 
           packages = with pkgs; [
-            devToolchain
+            cargo-nextest
             just
             nixfmt-rfc-style
-            rust-analyzer
             grpcurl
             jq
             unixtools.xxd

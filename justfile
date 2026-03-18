@@ -23,8 +23,8 @@ clippy:
     cargo clippy -- -D warnings
 
 # Run tests
-test:
-    cargo test -- --test-threads=1
+test *args:
+    cargo nextest run {{args}}
 
 # Run the server
 run *args:
@@ -194,34 +194,34 @@ e2e: dev-clean
     # ---------------------------------------------------------------
     checkout_ids=()
 
-      echo "==> Provisioning moneydevkit.com account..."
-      mdk_email="mdk-e2e-${RANDOM}@test.local"
-      mdk_password="E2eTestPass99"
-      signup=$(curl -sS "$mdk_url/api/auth/sign-up/email" \
-        -H 'Content-Type: application/json' \
-        -d "{\"email\":\"$mdk_email\",\"password\":\"$mdk_password\",\"name\":\"mdk-server e2e\"}")
-      session=$(echo "$signup" | jq -r '.token // empty')
-      if [ -z "$session" ]; then
-        echo "FAIL: signup failed"
-        echo "$signup" | jq .
-        exit 1
-      fi
-      echo "  account     $mdk_email"
+    echo "==> Provisioning moneydevkit.com account..."
+    mdk_email="mdk-e2e-${RANDOM}@test.local"
+    mdk_password="E2eTestPass99"
+    signup=$(curl -sS "$mdk_url/api/auth/sign-up/email" \
+      -H 'Content-Type: application/json' \
+      -d "{\"email\":\"$mdk_email\",\"password\":\"$mdk_password\",\"name\":\"mdk-server e2e\"}")
+    session=$(echo "$signup" | jq -r '.token // empty')
+    if [ -z "$session" ]; then
+      echo "FAIL: signup failed"
+      echo "$signup" | jq .
+      exit 1
+    fi
+    echo "  account     $mdk_email"
 
-      app=$(curl -sS "$mdk_url/api/mcp/apps" \
-        -H 'Content-Type: application/json' \
-        -H "Authorization: Bearer $session" \
-        -d '{"name":"mdk-server-e2e","webhookUrl":"http://localhost:8081/webhook"}')
-      mdk_token=$(echo "$app" | jq -r '.apiKey // empty')
-      if [ -z "$mdk_token" ]; then
-        echo "FAIL: app creation failed"
-        echo "$app" | jq .
-        exit 1
-      fi
-      echo "  api key     ${mdk_token:0:15}..."
+    app=$(curl -sS "$mdk_url/api/mcp/apps" \
+      -H 'Content-Type: application/json' \
+      -H "Authorization: Bearer $session" \
+      -d '{"name":"mdk-server-e2e","webhookUrl":"http://localhost:8081/webhook"}')
+    mdk_token=$(echo "$app" | jq -r '.apiKey // empty')
+    if [ -z "$mdk_token" ]; then
+      echo "FAIL: app creation failed"
+      echo "$app" | jq .
+      exit 1
+    fi
+    echo "  api key     ${mdk_token:0:15}..."
 
-      export MDK_ACCESS_TOKEN="$mdk_token"
-      export MDK_API_BASE_URL="$mdk_rpc"
+    export MDK_ACCESS_TOKEN="$mdk_token"
+    export MDK_API_BASE_URL="$mdk_rpc"
     just dev-config
 
     # ---------------------------------------------------------------
@@ -243,10 +243,10 @@ e2e: dev-clean
 
       if [ -z "$checkout_id" ] || [ "$checkout_id" = "null" ]; then
         echo "FAIL: no checkoutId in response"
-          return 1
-        fi
-        echo "==> [$label] checkoutId: $checkout_id"
-        checkout_ids+=("$checkout_id")
+        return 1
+      fi
+      echo "==> [$label] checkoutId: $checkout_id"
+      checkout_ids+=("$checkout_id")
 
       echo "==> [$label] Paying from node2..."
       grpcurl -plaintext -import-path "{{ln_proto}}" -proto lightning.proto \
@@ -303,37 +303,37 @@ e2e: dev-clean
     # ---------------------------------------------------------------
     # Verify checkouts on moneydevkit.com
     # ---------------------------------------------------------------
-      echo ""
-      echo "==> Verifying checkout status on moneydevkit.com..."
-      sleep 1
-      all_paid=true
-      for cid in "${checkout_ids[@]}"; do
-        status=$(curl -sS "$mdk_rpc/checkout/get" \
-          -H 'Content-Type: application/json' \
-          -H "x-api-key: $mdk_token" \
-          -d "{\"json\":{\"id\":\"$cid\"}}" | jq -r '.json.status')
-        if [ "$status" = "PAYMENT_RECEIVED" ]; then
-          echo "  $cid  $status"
-        else
-          echo "  $cid  $status  (expected PAYMENT_RECEIVED)"
-          all_paid=false
-        fi
-      done
-
-      if [ "$all_paid" = true ]; then
-        echo ""
-      echo "==> All checkouts paid: PASS"
+    echo ""
+    echo "==> Verifying checkout status on moneydevkit.com..."
+    sleep 1
+    all_paid=true
+    for cid in "${checkout_ids[@]}"; do
+      status=$(curl -sS "$mdk_rpc/checkout/get" \
+        -H 'Content-Type: application/json' \
+        -H "x-api-key: $mdk_token" \
+        -d "{\"json\":{\"id\":\"$cid\"}}" | jq -r '.json.status')
+      if [ "$status" = "PAYMENT_RECEIVED" ]; then
+        echo "  $cid  $status"
       else
-        echo ""
-      echo "==> FAIL: not all checkouts marked as paid"
-        exit 1
+        echo "  $cid  $status  (expected PAYMENT_RECEIVED)"
+        all_paid=false
       fi
+    done
 
-        echo ""
-        echo "==> Dashboard login:"
-        echo "  url       $mdk_url"
-        echo "  email     $mdk_email"
-        echo "  password  $mdk_password"
+    if [ "$all_paid" = true ]; then
+      echo ""
+      echo "==> All checkouts paid: PASS"
+    else
+      echo ""
+      echo "==> FAIL: not all checkouts marked as paid"
+      exit 1
+    fi
+
+    echo ""
+    echo "==> Dashboard login:"
+    echo "  url       $mdk_url"
+    echo "  email     $mdk_email"
+    echo "  password  $mdk_password"
 
 # Generate config.toml for the running lightning-node stack
 dev-config:
@@ -388,8 +388,8 @@ dev-config:
     sed -i "s|P2P_PLACEHOLDER|127.0.0.1:${n1_p2p}|" config.toml
     : "${MDK_ACCESS_TOKEN:?MDK_ACCESS_TOKEN is required (set it in env or .env)}"
     sed -i "s|TOKEN_PLACEHOLDER|${MDK_ACCESS_TOKEN}|" config.toml
-      if [ -n "${MDK_API_BASE_URL:-}" ]; then
-        echo "mdk_api_base_url = \"${MDK_API_BASE_URL}\"" >> config.toml
+    if [ -n "${MDK_API_BASE_URL:-}" ]; then
+      echo "mdk_api_base_url = \"${MDK_API_BASE_URL}\"" >> config.toml
     fi
     echo "config.toml written"
     echo "  bitcoind    127.0.0.1:${btc_port}"
