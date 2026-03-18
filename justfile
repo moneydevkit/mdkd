@@ -38,6 +38,10 @@ build-static:
 run-static *args:
     nix run .#static -- {{args}}
 
+# Build and load the docker image
+build-image:
+    nix build .#image && docker load < result
+
 # Clean build artifacts
 clean:
     cargo clean

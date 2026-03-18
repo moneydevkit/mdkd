@@ -98,6 +98,15 @@
             cargoArtifacts = staticCargoArtifacts;
           }
         );
+
+        image = pkgs.dockerTools.buildImage {
+          name = "mdk-server";
+          tag = "latest";
+          copyToRoot = [ staticBin ];
+          config = {
+            Entrypoint = [ "/bin/mdk-server" ];
+          };
+        };
       in
       {
         packages = {
@@ -110,6 +119,7 @@
         }
         // lib.optionalAttrs isLinux {
           static = staticBin;
+          image = image;
         };
 
         checks = {
