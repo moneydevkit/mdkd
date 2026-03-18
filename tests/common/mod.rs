@@ -81,6 +81,7 @@ pub struct MdkServerHandle {
     pub api_key: String,
     pub node_id: String,
     client: reqwest::Client,
+    _mock_mdk: MockMdkApi,
 }
 
 impl MdkServerHandle {
@@ -109,6 +110,10 @@ impl MdkServerHandle {
             ),
         };
 
+        let mock_mdk = MockMdkApi::start().await;
+        let mdk_api_base_url = mock_mdk.base_url();
+        let mdk_access_token = "test_token_dummy";
+
         let config = format!(
             r#"[node]
 network = "regtest"
@@ -128,6 +133,8 @@ api_address = "127.0.0.1:{api_port}"
 webhook_secret = "{webhook_secret}"
 lsp_node_id = "{lsp_node_id}"
 lsp_address = "{lsp_address}"
+mdk_access_token = "{mdk_access_token}"
+mdk_api_base_url = "{mdk_api_base_url}"
 "#,
             storage_dir = storage_dir.display(),
         );
@@ -178,6 +185,7 @@ lsp_address = "{lsp_address}"
             api_key,
             node_id: String::new(),
             client,
+            _mock_mdk: mock_mdk,
         };
 
         // Poll until the API is up.
@@ -401,6 +409,106 @@ impl Drop for LspNode {
     fn drop(&mut self) {
         let _ = self.node.stop();
     }
+}
+
+// ---------------------------------------------------------------------------
+// MockMdkApi — minimal oRPC mock for moneydevkit.com checkout endpoints
+// ---------------------------------------------------------------------------
+
+pub struct MockMdkApi {
+    pub port: u16,
+    shutdown_tx: Option<tokio::sync::oneshot::Sender<()>>,
+}
+
+impl MockMdkApi {
+    pub async fn start() -> Self {
+        let port = find_available_port();
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+
+        let app = axum::Router::new()
+            .route(
+                "/rpc/checkout/create",
+                axum::routing::post(mock_create_checkout),
+            )
+            .route(
+                "/rpc/checkout/registerInvoice",
+                axum::routing::post(mock_register_invoice),
+            )
+            .route(
+                "/rpc/checkout/paymentReceived",
+                axum::routing::post(mock_payment_received),
+            );
+
+        let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{port}"))
+            .await
+            .unwrap();
+
+        tokio::spawn(async move {
+            axum::serve(listener, app)
+                .with_graceful_shutdown(async {
+                    let _ = shutdown_rx.await;
+                })
+                .await
+                .unwrap();
+        });
+
+        Self {
+            port,
+            shutdown_tx: Some(shutdown_tx),
+        }
+    }
+
+    pub fn base_url(&self) -> String {
+        format!("http://127.0.0.1:{}/rpc", self.port)
+    }
+}
+
+impl Drop for MockMdkApi {
+    fn drop(&mut self) {
+        if let Some(tx) = self.shutdown_tx.take() {
+            let _ = tx.send(());
+        }
+    }
+}
+
+static CHECKOUT_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+async fn mock_create_checkout(
+    axum::Json(body): axum::Json<serde_json::Value>,
+) -> axum::Json<serde_json::Value> {
+    let seq = CHECKOUT_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let amount = body
+        .get("json")
+        .and_then(|j| j.get("amount"))
+        .and_then(|a| a.as_u64());
+
+    axum::Json(serde_json::json!({
+        "json": {
+            "id": format!("chk_test_{seq}"),
+            "status": "pending",
+            "invoiceAmountSats": amount,
+            "invoiceScid": null
+        }
+    }))
+}
+
+async fn mock_register_invoice() -> axum::Json<serde_json::Value> {
+    axum::Json(serde_json::json!({
+        "json": {
+            "id": "chk_test_registered",
+            "status": "invoice_registered",
+            "invoiceAmountSats": null,
+            "invoiceScid": null
+        }
+    }))
+}
+
+async fn mock_payment_received() -> axum::Json<serde_json::Value> {
+    axum::Json(serde_json::json!({
+        "json": {
+            "ok": true
+        }
+    }))
 }
 
 // ---------------------------------------------------------------------------

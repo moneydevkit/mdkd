@@ -172,8 +172,8 @@ dev-node-info:
       -H "Authorization: Bearer $api_key" \
     | jq .
 
-# End-to-end test. Pass --mdk to auto-provision a moneydevkit.com account.
-e2e *flags: dev-clean dev-config
+# End-to-end test against the local lightning-node + moneydevkit stack
+e2e: dev-clean
     #!/usr/bin/env bash
     set -euo pipefail
     amount_msat=100000
@@ -190,25 +190,10 @@ e2e *flags: dev-clean dev-config
     trap cleanup EXIT
 
     # ---------------------------------------------------------------
-    # MDK account provisioning (when --mdk flag is passed)
+    # MDK account provisioning
     # ---------------------------------------------------------------
-    mdk_enabled=""
-    mdk_token=""
     checkout_ids=()
 
-    for flag in {{flags}}; do
-      case "$flag" in
-        --mdk) mdk_enabled=1 ;;
-        *)     echo "Unknown flag: $flag"; exit 1 ;;
-      esac
-    done
-
-    if [ -n "${MDK_ACCESS_TOKEN:-}" ]; then
-      mdk_enabled=1
-      mdk_token="$MDK_ACCESS_TOKEN"
-    fi
-
-    if [ -n "$mdk_enabled" ] && [ -z "$mdk_token" ]; then
       echo "==> Provisioning moneydevkit.com account..."
       mdk_email="mdk-e2e-${RANDOM}@test.local"
       mdk_password="E2eTestPass99"
@@ -235,13 +220,9 @@ e2e *flags: dev-clean dev-config
       fi
       echo "  api key     ${mdk_token:0:15}..."
 
-      # Inject token into config.toml
       export MDK_ACCESS_TOKEN="$mdk_token"
       export MDK_API_BASE_URL="$mdk_rpc"
-      echo "mdk_access_token = \"$mdk_token\"" >> config.toml
-      echo "mdk_api_base_url = \"$mdk_rpc\"" >> config.toml
-      echo "  mdk         enabled ($mdk_rpc)"
-    fi
+    just dev-config
 
     # ---------------------------------------------------------------
     # Helpers
@@ -258,16 +239,14 @@ e2e *flags: dev-clean dev-config
       echo "$resp" | jq .
       invoice=$(echo "$resp" | jq -r '.invoice')
       payment_hash=$(echo "$resp" | jq -r '.paymentHash')
-      checkout_id=$(echo "$resp" | jq -r '.checkoutId // empty')
+      checkout_id=$(echo "$resp" | jq -r '.checkoutId')
 
-      if [ -n "$mdk_enabled" ]; then
-        if [ -z "$checkout_id" ]; then
-          echo "FAIL: MDK integration active but no checkoutId in response"
+      if [ -z "$checkout_id" ] || [ "$checkout_id" = "null" ]; then
+        echo "FAIL: no checkoutId in response"
           return 1
         fi
         echo "==> [$label] checkoutId: $checkout_id"
         checkout_ids+=("$checkout_id")
-      fi
 
       echo "==> [$label] Paying from node2..."
       grpcurl -plaintext -import-path "{{ln_proto}}" -proto lightning.proto \
@@ -324,10 +303,8 @@ e2e *flags: dev-clean dev-config
     # ---------------------------------------------------------------
     # Verify checkouts on moneydevkit.com
     # ---------------------------------------------------------------
-    if [ -n "$mdk_enabled" ]; then
       echo ""
       echo "==> Verifying checkout status on moneydevkit.com..."
-      # Give the async payment notification a moment to propagate
       sleep 1
       all_paid=true
       for cid in "${checkout_ids[@]}"; do
@@ -345,21 +322,18 @@ e2e *flags: dev-clean dev-config
 
       if [ "$all_paid" = true ]; then
         echo ""
-        echo "==> MDK integration: PASS"
+      echo "==> All checkouts paid: PASS"
       else
         echo ""
-        echo "==> MDK integration: FAIL (not all checkouts marked as paid)"
+      echo "==> FAIL: not all checkouts marked as paid"
         exit 1
       fi
 
-      if [ -n "${mdk_email:-}" ]; then
         echo ""
         echo "==> Dashboard login:"
         echo "  url       $mdk_url"
         echo "  email     $mdk_email"
         echo "  password  $mdk_password"
-      fi
-    fi
 
 # Generate config.toml for the running lightning-node stack
 dev-config:
@@ -406,21 +380,19 @@ dev-config:
     api_address = "127.0.0.1:8081"
     lsp_node_id = "PUBKEY_PLACEHOLDER"
     lsp_address = "P2P_PLACEHOLDER"
+    mdk_access_token = "TOKEN_PLACEHOLDER"
     TOML
     sed -i "s|DEV_STORAGE_PLACEHOLDER|{{dev_storage}}|" config.toml
     sed -i "s|BTC_PLACEHOLDER|127.0.0.1:${btc_port}|" config.toml
     sed -i "s|PUBKEY_PLACEHOLDER|${n1_pubkey}|" config.toml
     sed -i "s|P2P_PLACEHOLDER|127.0.0.1:${n1_p2p}|" config.toml
-    if [ -n "${MDK_ACCESS_TOKEN:-}" ]; then
-      echo "mdk_access_token = \"${MDK_ACCESS_TOKEN}\"" >> config.toml
+    : "${MDK_ACCESS_TOKEN:?MDK_ACCESS_TOKEN is required (set it in env or .env)}"
+    sed -i "s|TOKEN_PLACEHOLDER|${MDK_ACCESS_TOKEN}|" config.toml
       if [ -n "${MDK_API_BASE_URL:-}" ]; then
         echo "mdk_api_base_url = \"${MDK_API_BASE_URL}\"" >> config.toml
-      fi
     fi
     echo "config.toml written"
     echo "  bitcoind    127.0.0.1:${btc_port}"
     echo "  node1 p2p   127.0.0.1:${n1_p2p}"
     echo "  node1 id    ${n1_pubkey}"
-    if [ -n "${MDK_ACCESS_TOKEN:-}" ]; then
-      echo "  mdk         enabled (${MDK_API_BASE_URL:-https://staging.moneydevkit.com/rpc})"
-    fi
+    echo "  mdk         ${MDK_API_BASE_URL:-https://staging.moneydevkit.com/rpc}"

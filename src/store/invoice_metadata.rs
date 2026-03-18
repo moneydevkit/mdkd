@@ -14,7 +14,7 @@ pub struct InvoiceMetadata {
     pub payment_hash: String,
     pub external_id: Option<String>,
     pub webhook_url: Option<String>,
-    pub checkout_id: Option<String>,
+    pub checkout_id: String,
     pub created_at: i64,
 }
 
@@ -33,7 +33,7 @@ impl InvoiceMetadataStore {
 				payment_hash TEXT PRIMARY KEY,
 				external_id TEXT,
 				webhook_url TEXT,
-				checkout_id TEXT,
+				checkout_id TEXT NOT NULL,
 				created_at INTEGER NOT NULL
 			);",
         )

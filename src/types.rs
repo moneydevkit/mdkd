@@ -30,8 +30,7 @@ pub struct CreateInvoiceResponse {
     pub payment_hash: String,
     pub external_id: Option<String>,
     pub expires_at: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub checkout_id: Option<String>,
+    pub checkout_id: String,
 }
 
 #[derive(Serialize)]

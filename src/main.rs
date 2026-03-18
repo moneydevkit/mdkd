@@ -196,18 +196,19 @@ fn main() {
         }
     };
 
-    let mdk_client = mdk_config.mdk_access_token.as_ref().map(|token| {
-        let base_url = mdk_config.mdk_api_base_url.clone().unwrap_or_else(|| {
-            let network = config_file.network.to_string();
-            if network == "bitcoin" {
-                DEFAULT_BASE_URL_MAINNET.to_string()
-            } else {
-                DEFAULT_BASE_URL_STAGING.to_string()
-            }
-        });
-        info!("MDK platform integration enabled ({})", base_url);
-        Arc::new(MdkApiClient::new(base_url, token.clone()))
+    let base_url = mdk_config.mdk_api_base_url.clone().unwrap_or_else(|| {
+        let network = config_file.network.to_string();
+        if network == "bitcoin" {
+            DEFAULT_BASE_URL_MAINNET.to_string()
+        } else {
+            DEFAULT_BASE_URL_STAGING.to_string()
+        }
     });
+    info!("MDK platform integration enabled ({})", base_url);
+    let mdk_client = Arc::new(MdkApiClient::new(
+        base_url,
+        mdk_config.mdk_access_token.clone(),
+    ));
 
     info!("Starting up...");
     match node.start() {

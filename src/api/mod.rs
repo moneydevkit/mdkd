@@ -20,7 +20,7 @@ pub struct AppState {
     pub node: Arc<Node>,
     pub metadata_store: Arc<InvoiceMetadataStore>,
     pub api_key: String,
-    pub mdk_client: Option<Arc<MdkApiClient>>,
+    pub mdk_client: Arc<MdkApiClient>,
 }
 
 pub fn router(state: AppState) -> Router {

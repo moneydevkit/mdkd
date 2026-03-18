@@ -25,7 +25,7 @@ pub async fn run_event_loop(
     metadata_store: Arc<InvoiceMetadataStore>,
     webhook_secret: Vec<u8>,
     http_client: reqwest::Client,
-    mdk_client: Option<Arc<MdkApiClient>>,
+    mdk_client: Arc<MdkApiClient>,
 ) {
     loop {
         let event = node.next_event_async().await;
@@ -87,34 +87,30 @@ pub async fn run_event_loop(
                             );
                         }
 
-                        // Notify moneydevkit.com if checkout is associated.
-                        if metadata.checkout_id.is_some() {
-                            if let Some(ref client) = mdk_client {
-                                let client = Arc::clone(client);
-                                let hash = hash_str.clone();
-                                let amount_sats = amount_msat / 1000;
-                                tokio::spawn(async move {
-                                    let req = PaymentReceivedRequest {
-                                        payments: vec![PaymentEntry {
-                                            payment_hash: hash.clone(),
-                                            amount_sats,
-                                            sandbox: false,
-                                        }],
-                                    };
-                                    if let Err(e) = client.payment_received(&req).await {
-                                        error!(
-                                            "Failed to notify moneydevkit.com for payment {}: {e}",
-                                            hash
-                                        );
-                                    } else {
-                                        info!(
-                                            "Notified moneydevkit.com of payment {} ({} sats)",
-                                            hash, amount_sats
-                                        );
-                                    }
-                                });
+                        // Notify moneydevkit.com of the payment.
+                        let client = Arc::clone(&mdk_client);
+                        let hash = hash_str.clone();
+                        let amount_sats = amount_msat / 1000;
+                        tokio::spawn(async move {
+                            let req = PaymentReceivedRequest {
+                                payments: vec![PaymentEntry {
+                                    payment_hash: hash.clone(),
+                                    amount_sats,
+                                    sandbox: false,
+                                }],
+                            };
+                            if let Err(e) = client.payment_received(&req).await {
+                                error!(
+                                    "Failed to notify moneydevkit.com for payment {}: {e}",
+                                    hash
+                                );
+                            } else {
+                                info!(
+                                    "Notified moneydevkit.com of payment {} ({} sats)",
+                                    hash, amount_sats
+                                );
                             }
-                        }
+                        });
                     }
                     Ok(None) => {}
                     Err(e) => error!("Failed to look up invoice metadata: {e}"),

@@ -20,7 +20,7 @@ use crate::types::{CreateInvoiceRequest, CreateInvoiceResponse, GetInvoiceRespon
 pub async fn handle_create_invoice(
     node: Arc<Node>,
     metadata_store: Arc<InvoiceMetadataStore>,
-    mdk_client: Option<Arc<MdkApiClient>>,
+    mdk_client: Arc<MdkApiClient>,
     Json(req): Json<CreateInvoiceRequest>,
 ) -> Result<Json<CreateInvoiceResponse>, AppError> {
     let description = Bolt11InvoiceDescription::Direct(
@@ -28,16 +28,8 @@ pub async fn handle_create_invoice(
             .map_err(|e| AppError::BadRequest(format!("Invalid description: {}", e)))?,
     );
 
-    let (invoice, checkout_id) = match mdk_client {
-        Some(client) => create_with_checkout(&node, &client, &description, &req).await?,
-        None => {
-            let amount_msat = req
-                .amount_msat
-                .ok_or_else(|| AppError::BadRequest("amount_msat is required".into()))?;
-            let invoice = create_invoice(&node, amount_msat, &description, req.expiry_secs)?;
-            (invoice, None)
-        }
-    };
+    let (invoice, checkout_id) =
+        create_with_checkout(&node, &mdk_client, &description, &req).await?;
 
     let payment_hash = invoice.payment_hash().to_string();
     let expires_at = invoice.expires_at().map(|d| d.as_secs()).unwrap_or(0);
@@ -69,7 +61,7 @@ async fn create_with_checkout(
     client: &MdkApiClient,
     description: &Bolt11InvoiceDescription,
     req: &CreateInvoiceRequest,
-) -> Result<(Bolt11Invoice, Option<String>), AppError> {
+) -> Result<(Bolt11Invoice, String), AppError> {
     let products = req.product.as_ref().map(|p| vec![p.clone()]);
 
     let checkout_req = CreateCheckoutRequest {
@@ -134,7 +126,7 @@ async fn create_with_checkout(
         .await
         .map_err(|e| AppError::Internal(format!("Failed to register invoice: {e}")))?;
 
-    Ok((invoice, Some(checkout.id)))
+    Ok((invoice, checkout.id))
 }
 
 fn create_invoice(
