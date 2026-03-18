@@ -62,21 +62,66 @@ compose-port service port:
 dev: dev-config
     cargo run -- config.toml
 
+# Run mdk-server against staging (mutinynet + staging.moneydevkit.com)
+dev-staging: dev-staging-config
+    cargo run -- config.toml
+
+# Generate config.toml for staging (esplora, no local bitcoind needed)
+dev-staging-config:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set -a; source .env.staging; set +a
+    : "${MDK_ACCESS_TOKEN:?set MDK_ACCESS_TOKEN in .env.staging}"
+    LSP_NODE_ID="${LSP_NODE_ID:-03fd9a377576df94cc7e458471c43c400630655083dee89df66c6ad38d1b7acffd}"
+    LSP_ADDRESS="${LSP_ADDRESS:-lsp.staging.moneydevkit.com:9735}"
+    ESPLORA_URL="${ESPLORA_URL:-https://mutinynet.com/api}"
+    MDK_API_BASE_URL="${MDK_API_BASE_URL:-https://staging.moneydevkit.com/rpc}"
+    cat > config.toml << TOML
+    [node]
+    network = "signet"
+    listening_addresses = ["127.0.0.1:19735"]
+    rest_service_address = "127.0.0.1:3099"
+
+    [storage.disk]
+    dir_path = "{{dev_storage}}"
+
+    [log]
+    level = "Debug"
+
+    [esplora]
+    server_url = "$ESPLORA_URL"
+
+    [mdk]
+    api_address = "127.0.0.1:8081"
+    lsp_node_id = "$LSP_NODE_ID"
+    lsp_address = "$LSP_ADDRESS"
+    mdk_access_token = "$MDK_ACCESS_TOKEN"
+    mdk_api_base_url = "$MDK_API_BASE_URL"
+    TOML
+    echo "config.toml written (staging/mutinynet)"
+    echo "  esplora     $ESPLORA_URL"
+    echo "  lsp         $LSP_NODE_ID"
+    echo "  mdk         $MDK_API_BASE_URL"
+
 # Wipe mdk-server local state (seed, db, api key)
 dev-clean:
     rm -rf "{{dev_storage}}"
     rm -f config.toml
     @echo "Cleaned {{dev_storage}} and config.toml"
 
+[private]
+api-key:
+    @xxd -p -c 64 "{{dev_storage}}/$(grep -m1 'network' config.toml | sed 's/.*= *\"//;s/\"//')/api_key"
+
 # Print the hex API key for the running mdk-server
 dev-api-key:
-    @xxd -p -c 64 "{{dev_storage}}/regtest/api_key"
+    @just api-key
 
 # Create a test invoice (amount in msats, default 100k = 100 sats)
 dev-invoice amount_msat="100000":
     #!/usr/bin/env bash
     set -euo pipefail
-    api_key=$(xxd -p -c 64 "{{dev_storage}}/regtest/api_key")
+    api_key=$(just api-key)
     resp=$(curl -sS -w '\n%{http_code}' http://127.0.0.1:8081/v1/invoices \
       -H "Authorization: Bearer $api_key" \
       -H "Content-Type: application/json" \
@@ -101,7 +146,7 @@ dev-pay invoice:
 dev-status payment_hash:
     #!/usr/bin/env bash
     set -euo pipefail
-    api_key=$(xxd -p -c 64 "{{dev_storage}}/regtest/api_key")
+    api_key=$(just api-key)
     curl -s "http://127.0.0.1:8081/v1/invoices/{{payment_hash}}" \
       -H "Authorization: Bearer $api_key" \
     | jq .
@@ -110,7 +155,7 @@ dev-status payment_hash:
 dev-node-info:
     #!/usr/bin/env bash
     set -euo pipefail
-    api_key=$(xxd -p -c 64 "{{dev_storage}}/regtest/api_key")
+    api_key=$(just api-key)
     curl -s http://127.0.0.1:8081/v1/node \
       -H "Authorization: Bearer $api_key" \
     | jq .
@@ -253,7 +298,7 @@ e2e *flags: dev-clean dev-config
       sleep 0.5
     done
 
-    api_key=$(xxd -p -c 64 "{{dev_storage}}/regtest/api_key")
+    api_key=$(xxd -p -c 64 "{{dev_storage}}/$(grep -m1 'network' config.toml | sed 's/.*= *\"//;s/\"//')/api_key")
     n2_grpc=$(just compose-port lightning-node2 4000)
 
     pay_invoice "JIT channel" $amount_msat
