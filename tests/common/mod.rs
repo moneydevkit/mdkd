@@ -89,6 +89,7 @@ impl MdkServerHandle {
         bitcoind: &TestBitcoind,
         webhook_port: Option<u16>,
         lsp: Option<&LspNode>,
+        mnemonic: &str,
     ) -> Self {
         #[allow(deprecated)]
         let storage_dir = tempfile::tempdir().unwrap().into_path();
@@ -145,6 +146,7 @@ mdk_api_base_url = "{mdk_api_base_url}"
         let binary = env!("CARGO_BIN_EXE_mdk-server");
         let mut child = Command::new(binary)
             .arg(config_path.to_str().unwrap())
+            .env("MDK_MNEMONIC", mnemonic)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()

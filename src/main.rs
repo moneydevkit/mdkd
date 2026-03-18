@@ -16,6 +16,7 @@ use clap::Parser;
 use hex::DisplayHex;
 use ldk_server::io::persist::paginated_kv_store::PaginatedKVStore;
 use ldk_server::io::persist::sqlite_store::SqliteStore;
+use ldk_server::ldk_node::bip39::Mnemonic;
 use ldk_server::ldk_node::bitcoin::secp256k1::PublicKey;
 use ldk_server::ldk_node::config::Config as LdkNodeConfig;
 use ldk_server::ldk_node::lightning::ln::msgs::SocketAddress;
@@ -166,8 +167,16 @@ fn main() {
 
     builder.set_runtime(runtime.handle().clone());
 
-    let seed_path = storage_dir.join("keys_seed").to_str().unwrap().to_string();
-    builder.set_entropy_seed_path(seed_path);
+    let mnemonic_phrase = std::env::var("MDK_MNEMONIC").unwrap_or_else(|_| {
+        error!("MDK_MNEMONIC environment variable is required");
+        std::process::exit(1);
+    });
+    let mnemonic = Mnemonic::parse(&mnemonic_phrase).unwrap_or_else(|e| {
+        error!("Invalid MDK_MNEMONIC: {e}");
+        std::process::exit(1);
+    });
+    builder.set_entropy_bip39_mnemonic(mnemonic, None);
+    info!("Wallet seed derived from MDK_MNEMONIC");
 
     let node = match builder.build() {
         Ok(node) => Arc::new(node),

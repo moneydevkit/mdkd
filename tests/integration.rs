@@ -6,10 +6,32 @@ use common::{
     setup_funded_channel, LspNode, MdkServerHandle, PayerNode, TestBitcoind, WebhookReceiver,
 };
 
+const TEST_MNEMONIC: &str =
+    "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_mnemonic_deterministic_node_id() {
+    let bitcoind = TestBitcoind::new();
+
+    let server1 = MdkServerHandle::start(&bitcoind, None, None, TEST_MNEMONIC).await;
+    let node_id_1 = server1.node_id.clone();
+    drop(server1);
+
+    let server2 = MdkServerHandle::start(&bitcoind, None, None, TEST_MNEMONIC).await;
+    let node_id_2 = server2.node_id.clone();
+    drop(server2);
+
+    assert_eq!(
+        node_id_1, node_id_2,
+        "Same mnemonic must produce the same node ID"
+    );
+    assert!(!node_id_1.is_empty());
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn test_node_info() {
     let bitcoind = TestBitcoind::new();
-    let server = MdkServerHandle::start(&bitcoind, None, None).await;
+    let server = MdkServerHandle::start(&bitcoind, None, None, TEST_MNEMONIC).await;
 
     let resp: serde_json::Value = server.get("/v1/node").await.json().await.unwrap();
     assert!(!resp["nodeId"].as_str().unwrap().is_empty());
@@ -20,7 +42,7 @@ async fn test_node_info() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_create_and_get_invoice() {
     let bitcoind = TestBitcoind::new();
-    let server = MdkServerHandle::start(&bitcoind, None, None).await;
+    let server = MdkServerHandle::start(&bitcoind, None, None, TEST_MNEMONIC).await;
     let payer = PayerNode::new(&bitcoind);
     setup_funded_channel(&bitcoind, &payer, &server, 200_000).await;
 
@@ -59,7 +81,7 @@ async fn test_create_and_get_invoice() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_auth_required() {
     let bitcoind = TestBitcoind::new();
-    let server = MdkServerHandle::start(&bitcoind, None, None).await;
+    let server = MdkServerHandle::start(&bitcoind, None, None, TEST_MNEMONIC).await;
 
     // Request without auth header.
     let resp = reqwest::Client::new()
@@ -82,7 +104,7 @@ async fn test_auth_required() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_invoice_not_found() {
     let bitcoind = TestBitcoind::new();
-    let server = MdkServerHandle::start(&bitcoind, None, None).await;
+    let server = MdkServerHandle::start(&bitcoind, None, None, TEST_MNEMONIC).await;
 
     let resp = server
         .get("/v1/invoices/0000000000000000000000000000000000000000000000000000000000000000")
@@ -93,7 +115,7 @@ async fn test_invoice_not_found() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_payment_flow() {
     let bitcoind = TestBitcoind::new();
-    let server = MdkServerHandle::start(&bitcoind, None, None).await;
+    let server = MdkServerHandle::start(&bitcoind, None, None, TEST_MNEMONIC).await;
     let payer = PayerNode::new(&bitcoind);
 
     setup_funded_channel(&bitcoind, &payer, &server, 200_000).await;
@@ -135,7 +157,7 @@ async fn test_payment_flow() {
 async fn test_webhook_delivery() {
     let bitcoind = TestBitcoind::new();
     let webhook = WebhookReceiver::start().await;
-    let server = MdkServerHandle::start(&bitcoind, Some(webhook.port), None).await;
+    let server = MdkServerHandle::start(&bitcoind, Some(webhook.port), None, TEST_MNEMONIC).await;
     let payer = PayerNode::new(&bitcoind);
 
     setup_funded_channel(&bitcoind, &payer, &server, 200_000).await;
@@ -201,7 +223,7 @@ async fn test_jit_channel_invoice() {
     }
 
     // Start mdk-server pointed at real LSP — no channels yet.
-    let server = MdkServerHandle::start(&bitcoind, None, Some(&lsp)).await;
+    let server = MdkServerHandle::start(&bitcoind, None, Some(&lsp), TEST_MNEMONIC).await;
 
     // Create invoice — should take the JIT path (no inbound liquidity).
     let body = serde_json::json!({

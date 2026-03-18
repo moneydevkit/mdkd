@@ -72,17 +72,21 @@ compose-port service port:
 
 # Run mdk-server against the local lightning-node stack
 dev: dev-config
-    cargo run -- config.toml
+    MDK_MNEMONIC="abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about" cargo run -- config.toml
 
 # Run mdk-server against staging (mutinynet + staging.moneydevkit.com)
 dev-staging: dev-staging-config
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set -a; source .env; set +a
+    : "${MDK_MNEMONIC:?set MDK_MNEMONIC in .env}"
     cargo run -- config.toml
 
 # Generate config.toml for staging (esplora, no local bitcoind needed)
 dev-staging-config:
     #!/usr/bin/env bash
     set -euo pipefail
-    set -a; source .env.staging; set +a
+    set -a; source .env; set +a
     : "${MDK_ACCESS_TOKEN:?set MDK_ACCESS_TOKEN in .env.staging}"
     LSP_NODE_ID="${LSP_NODE_ID:-03fd9a377576df94cc7e458471c43c400630655083dee89df66c6ad38d1b7acffd}"
     LSP_ADDRESS="${LSP_ADDRESS:-lsp.staging.moneydevkit.com:9735}"
@@ -276,6 +280,7 @@ e2e: dev-clean
     # Run
     # ---------------------------------------------------------------
     echo "==> Starting mdk-server..."
+    export MDK_MNEMONIC="${MDK_MNEMONIC:-abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about}"
     cargo run --quiet -- config.toml &
     SERVER_PID=$!
 
