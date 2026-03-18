@@ -30,6 +30,14 @@ test:
 run *args:
     cargo run -- {{args}}
 
+# Build the static musl binary
+build-static:
+    nix build .#static
+
+# Run the static binary
+run-static *args:
+    nix run .#static -- {{args}}
+
 # Clean build artifacts
 clean:
     cargo clean

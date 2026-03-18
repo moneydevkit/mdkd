@@ -24,10 +24,9 @@ pub struct TestBitcoind {
 
 impl TestBitcoind {
     pub fn new() -> Self {
-        let bitcoind = match std::env::var("BITCOIND_EXE") {
-            Ok(path) => corepc_node::Node::new(path).unwrap(),
-            Err(_) => corepc_node::Node::from_downloaded().unwrap(),
-        };
+        let exe = std::env::var("BITCOIND_EXE")
+            .expect("BITCOIND_EXE must be set (use `nix develop` or set it manually)");
+        let bitcoind = corepc_node::Node::new(exe).unwrap();
         let address = bitcoind.client.new_address().unwrap();
         bitcoind.client.generate_to_address(101, &address).unwrap();
         Self { bitcoind }

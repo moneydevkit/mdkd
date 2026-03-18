@@ -8,6 +8,7 @@
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    crane.url = "github:ipetkov/crane";
     nixpkgs-unstable.url = "github:nixos/nixpkgs/e6f23dc08d3624daab7094b701aa3954923c6bbb";
   };
 
@@ -17,6 +18,7 @@
       nixpkgs,
       flake-utils,
       fenix,
+      crane,
       nixpkgs-unstable,
     }:
     flake-utils.lib.eachDefaultSystem (
@@ -24,55 +26,131 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
         inherit (pkgs) lib;
+        isLinux = pkgs.stdenv.isLinux;
 
         pkgsUnstable = nixpkgs-unstable.legacyPackages.${system};
 
-        rustToolchain = fenix.packages.${system}.stable.toolchain;
+        fenixPkgs = fenix.packages.${system};
 
-        nativeBuildInputs = with pkgs; [
-          pkg-config
-          protobuf
-          rustToolchain
-        ];
+        # Dev toolchain: full stable (no musl target)
+        devToolchain = fenixPkgs.stable.toolchain;
 
-        buildInputs =
-          with pkgs;
+        # Build toolchain: stable + clippy/rustfmt + musl target for static builds
+        buildToolchain = fenixPkgs.combine (
           [
-            openssl
+            fenixPkgs.stable.cargo
+            fenixPkgs.stable.rustc
+            fenixPkgs.stable.clippy
+            fenixPkgs.stable.rustfmt
           ]
-          ++ lib.optionals stdenv.isDarwin [
-            libiconv
-            darwin.apple_sdk.frameworks.Security
-            darwin.apple_sdk.frameworks.SystemConfiguration
-          ];
+          ++ lib.optionals isLinux [
+            fenixPkgs.targets.${muslTarget}.stable.rust-std
+          ]
+        );
+
+        craneLib = (crane.mkLib pkgs).overrideToolchain buildToolchain;
+
+        src = craneLib.cleanCargoSource ./.;
+
+        # Shared args for the native (non-static) build
+        commonArgs = {
+          inherit src;
+          strictDeps = true;
+          nativeBuildInputs = [ pkgs.protobuf ];
+          BITCOIND_EXE = "${pkgsUnstable.bitcoind}/bin/bitcoind";
+        };
+
+        cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+
+        # Musl target and cross-compiler, parameterized by host architecture
+        muslTarget =
+          {
+            x86_64-linux = "x86_64-unknown-linux-musl";
+            aarch64-linux = "aarch64-unknown-linux-musl";
+          }
+          .${system} or null;
+
+        muslCC =
+          pkgs.pkgsCross.${
+            {
+              x86_64-linux = "musl64";
+              aarch64-linux = "aarch64-multiplatform-musl";
+            }
+            .${system}
+          }.stdenv.cc;
+
+        muslTargetUnderscored = builtins.replaceStrings [ "-" ] [ "_" ] muslTarget;
+        muslTargetUpperUnderscored = lib.toUpper (builtins.replaceStrings [ "-" ] [ "_" ] muslTarget);
+
+        staticArgs = commonArgs // {
+          CARGO_BUILD_TARGET = muslTarget;
+          CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
+          "CC_${muslTargetUnderscored}" = "${muslCC}/bin/${muslCC.targetPrefix}cc";
+          "CARGO_TARGET_${muslTargetUpperUnderscored}_LINKER" = "${muslCC}/bin/${muslCC.targetPrefix}cc";
+          nativeBuildInputs = commonArgs.nativeBuildInputs ++ [ muslCC ];
+        };
+
+        staticCargoArtifacts = lib.optionalAttrs isLinux (craneLib.buildDepsOnly staticArgs);
+
+        staticBin = craneLib.buildPackage (
+          staticArgs
+          // {
+            cargoArtifacts = staticCargoArtifacts;
+          }
+        );
       in
       {
-        devShells.default = pkgs.mkShell {
-          packages =
-            with pkgs;
-            [
-              just
-              nixfmt-rfc-style
-              rust-analyzer
-              grpcurl
-              jq
-              unixtools.xxd
-            ]
-            ++ nativeBuildInputs;
+        packages = {
+          default = craneLib.buildPackage (
+            commonArgs
+            // {
+              inherit cargoArtifacts;
+            }
+          );
+        }
+        // lib.optionalAttrs isLinux {
+          static = staticBin;
+        };
 
-          inherit buildInputs;
+        checks = {
+          clippy = craneLib.cargoClippy (
+            commonArgs
+            // {
+              inherit cargoArtifacts;
+              cargoClippyExtraArgs = "-- --deny warnings";
+            }
+          );
+
+          fmt = craneLib.cargoFmt { inherit src; };
+
+          test = craneLib.cargoNextest (
+            commonArgs
+            // {
+              inherit cargoArtifacts;
+            }
+          );
+        };
+
+        devShells.default = craneLib.devShell {
+          checks = self.checks.${system};
+
+          packages = with pkgs; [
+            devToolchain
+            just
+            nixfmt-rfc-style
+            rust-analyzer
+            grpcurl
+            jq
+            unixtools.xxd
+          ];
 
           env = {
-            RUSTFLAGS = "--cfg no_download";
             BITCOIND_EXE = "${pkgsUnstable.bitcoind}/bin/bitcoind";
           };
 
           shellHook = ''
             echo "================================================================================"
             echo "MDK Server Development Environment"
-
-
-
             echo "Development Environment Ready."
             echo "================================================================================"
           '';
