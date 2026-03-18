@@ -1,6 +1,7 @@
 mod api;
 mod config;
 mod event_loop;
+mod mdk;
 mod store;
 mod types;
 mod webhook;
@@ -26,6 +27,7 @@ use tokio::signal::unix::SignalKind;
 
 use crate::api::AppState;
 use crate::config::load_mdk_config;
+use crate::mdk::client::{MdkApiClient, DEFAULT_BASE_URL_MAINNET, DEFAULT_BASE_URL_STAGING};
 use crate::store::invoice_metadata::InvoiceMetadataStore;
 
 const API_KEY_FILE: &str = "api_key";
@@ -43,7 +45,7 @@ fn main() {
     // Build ldk-server's ArgsConfig to reuse their config loading.
     // We pass the config file path as a positional arg.
     let ldk_args =
-        ldk_server::util::config::ArgsConfig::parse_from(&["mdk-server", &args.config_file]);
+        ldk_server::util::config::ArgsConfig::parse_from(["mdk-server", &args.config_file]);
 
     let config_file = match load_config(&ldk_args) {
         Ok(config) => config,
@@ -101,11 +103,13 @@ fn main() {
         }
     };
 
-    let mut ldk_node_config = LdkNodeConfig::default();
-    ldk_node_config.storage_dir_path = network_dir.to_str().unwrap().to_string();
-    ldk_node_config.listening_addresses = config_file.listening_addrs;
-    ldk_node_config.announcement_addresses = config_file.announcement_addrs;
-    ldk_node_config.network = config_file.network;
+    let ldk_node_config = LdkNodeConfig {
+        storage_dir_path: network_dir.to_str().unwrap().to_string(),
+        listening_addresses: config_file.listening_addrs,
+        announcement_addresses: config_file.announcement_addrs,
+        network: config_file.network,
+        ..Default::default()
+    };
 
     let mut builder = Builder::from_config(ldk_node_config);
     builder.set_log_facade_logger();
@@ -192,6 +196,19 @@ fn main() {
         }
     };
 
+    let mdk_client = mdk_config.mdk_access_token.as_ref().map(|token| {
+        let base_url = mdk_config.mdk_api_base_url.clone().unwrap_or_else(|| {
+            let network = config_file.network.to_string();
+            if network == "bitcoin" {
+                DEFAULT_BASE_URL_MAINNET.to_string()
+            } else {
+                DEFAULT_BASE_URL_STAGING.to_string()
+            }
+        });
+        info!("MDK platform integration enabled ({})", base_url);
+        Arc::new(MdkApiClient::new(base_url, token.clone()))
+    });
+
     info!("Starting up...");
     match node.start() {
         Ok(()) => {}
@@ -237,6 +254,7 @@ fn main() {
             node: Arc::clone(&node),
             metadata_store: Arc::clone(&metadata_store),
             api_key: api_key.clone(),
+            mdk_client: mdk_client.clone(),
         };
 
         let app = api::router(app_state);
@@ -258,6 +276,7 @@ fn main() {
         let event_metadata = Arc::clone(&metadata_store);
         let event_secret = mdk_config.webhook_secret.clone();
         let event_client = http_client.clone();
+        let event_mdk_client = mdk_client.clone();
 
         tokio::spawn(async move {
             event_loop::run_event_loop(
@@ -266,6 +285,7 @@ fn main() {
                 event_metadata,
                 event_secret,
                 event_client,
+                event_mdk_client,
             )
             .await;
         });

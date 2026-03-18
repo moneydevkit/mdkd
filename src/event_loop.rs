@@ -13,6 +13,8 @@ use ldk_server::util::proto_adapter::{forwarded_payment_to_proto, payment_to_pro
 use log::{error, info};
 use prost::Message;
 
+use crate::mdk::client::MdkApiClient;
+use crate::mdk::types::{PaymentEntry, PaymentReceivedRequest};
 use crate::store::invoice_metadata::InvoiceMetadataStore;
 use crate::types::WebhookPayload;
 use crate::webhook::dispatcher::spawn_webhook_delivery;
@@ -23,6 +25,7 @@ pub async fn run_event_loop(
     metadata_store: Arc<InvoiceMetadataStore>,
     webhook_secret: Vec<u8>,
     http_client: reqwest::Client,
+    mdk_client: Option<Arc<MdkApiClient>>,
 ) {
     loop {
         let event = node.next_event_async().await;
@@ -64,16 +67,16 @@ pub async fn run_event_loop(
                     error!("Unable to find payment with paymentId: {payment_id}");
                 }
 
-                // Trigger webhook if registered for this payment hash.
+                // Trigger webhook and MDK notification if registered for this payment hash.
                 let hash_str = payment_hash.to_string();
                 match metadata_store.get_by_payment_hash(&hash_str) {
                     Ok(Some(metadata)) => {
                         if let Some(webhook_url) = metadata.webhook_url {
                             let payload = WebhookPayload {
                                 event: "payment_received".into(),
-                                payment_hash: hash_str,
+                                payment_hash: hash_str.clone(),
                                 amount_msat,
-                                external_id: metadata.external_id,
+                                external_id: metadata.external_id.clone(),
                                 timestamp: now(),
                             };
                             spawn_webhook_delivery(
@@ -82,6 +85,35 @@ pub async fn run_event_loop(
                                 webhook_secret.clone(),
                                 payload,
                             );
+                        }
+
+                        // Notify moneydevkit.com if checkout is associated.
+                        if metadata.checkout_id.is_some() {
+                            if let Some(ref client) = mdk_client {
+                                let client = Arc::clone(client);
+                                let hash = hash_str.clone();
+                                let amount_sats = amount_msat / 1000;
+                                tokio::spawn(async move {
+                                    let req = PaymentReceivedRequest {
+                                        payments: vec![PaymentEntry {
+                                            payment_hash: hash.clone(),
+                                            amount_sats,
+                                            sandbox: false,
+                                        }],
+                                    };
+                                    if let Err(e) = client.payment_received(&req).await {
+                                        error!(
+                                            "Failed to notify moneydevkit.com for payment {}: {e}",
+                                            hash
+                                        );
+                                    } else {
+                                        info!(
+                                            "Notified moneydevkit.com of payment {} ({} sats)",
+                                            hash, amount_sats
+                                        );
+                                    }
+                                });
+                            }
                         }
                     }
                     Ok(None) => {}

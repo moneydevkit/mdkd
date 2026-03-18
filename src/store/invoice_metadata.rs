@@ -14,6 +14,7 @@ pub struct InvoiceMetadata {
     pub payment_hash: String,
     pub external_id: Option<String>,
     pub webhook_url: Option<String>,
+    pub checkout_id: Option<String>,
     pub created_at: i64,
 }
 
@@ -32,6 +33,7 @@ impl InvoiceMetadataStore {
 				payment_hash TEXT PRIMARY KEY,
 				external_id TEXT,
 				webhook_url TEXT,
+				checkout_id TEXT,
 				created_at INTEGER NOT NULL
 			);",
         )
@@ -45,16 +47,17 @@ impl InvoiceMetadataStore {
     pub fn insert(&self, metadata: &InvoiceMetadata) -> io::Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO mdk_invoice_metadata (payment_hash, external_id, webhook_url, created_at)
-			 VALUES (?1, ?2, ?3, ?4)",
-            (
-                &metadata.payment_hash,
-                &metadata.external_id,
-                &metadata.webhook_url,
-                metadata.created_at,
-            ),
-        )
-        .map_err(|e| io::Error::other(format!("Failed to insert invoice metadata: {}", e)))?;
+			"INSERT INTO mdk_invoice_metadata (payment_hash, external_id, webhook_url, checkout_id, created_at)
+			 VALUES (?1, ?2, ?3, ?4, ?5)",
+			(
+				&metadata.payment_hash,
+				&metadata.external_id,
+				&metadata.webhook_url,
+				&metadata.checkout_id,
+				metadata.created_at,
+			),
+		)
+		.map_err(|e| io::Error::other(format!("Failed to insert invoice metadata: {}", e)))?;
         Ok(())
     }
 
@@ -62,7 +65,7 @@ impl InvoiceMetadataStore {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare(
-                "SELECT payment_hash, external_id, webhook_url, created_at
+                "SELECT payment_hash, external_id, webhook_url, checkout_id, created_at
 				 FROM mdk_invoice_metadata WHERE payment_hash = ?1",
             )
             .map_err(|e| io::Error::other(format!("Failed to prepare query: {}", e)))?;
@@ -73,7 +76,8 @@ impl InvoiceMetadataStore {
                     payment_hash: row.get(0)?,
                     external_id: row.get(1)?,
                     webhook_url: row.get(2)?,
-                    created_at: row.get(3)?,
+                    checkout_id: row.get(3)?,
+                    created_at: row.get(4)?,
                 })
             })
             .optional()

@@ -21,6 +21,7 @@ getrandom = "0.2"
 prost = "0.11.6"
 hmac = "0.12"
 sha2 = "0.10"
+time = { version = "0.3", features = ["formatting"] }
 
 [dev-dependencies]
 corepc-node = { version = "0.10", features = ["download", "29_0"] }

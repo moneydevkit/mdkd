@@ -3,11 +3,24 @@ use serde::{Deserialize, Serialize};
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateInvoiceRequest {
-    pub amount_msat: u64,
+    pub amount_msat: Option<u64>,
     pub description: String,
     pub expiry_secs: u32,
     pub external_id: Option<String>,
     pub webhook_url: Option<String>,
+    pub product: Option<String>,
+    pub currency: Option<String>,
+    pub success_url: Option<String>,
+    pub metadata: Option<serde_json::Value>,
+    pub customer: Option<CheckoutCustomerInput>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckoutCustomerInput {
+    pub name: Option<String>,
+    pub email: Option<String>,
+    pub external_id: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -17,6 +30,8 @@ pub struct CreateInvoiceResponse {
     pub payment_hash: String,
     pub external_id: Option<String>,
     pub expires_at: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checkout_id: Option<String>,
 }
 
 #[derive(Serialize)]

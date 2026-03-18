@@ -12,6 +12,7 @@ use axum::routing::{get, post};
 use axum::Router;
 use ldk_server::ldk_node::Node;
 
+use crate::mdk::client::MdkApiClient;
 use crate::store::invoice_metadata::InvoiceMetadataStore;
 
 #[derive(Clone)]
@@ -19,6 +20,7 @@ pub struct AppState {
     pub node: Arc<Node>,
     pub metadata_store: Arc<InvoiceMetadataStore>,
     pub api_key: String,
+    pub mdk_client: Option<Arc<MdkApiClient>>,
 }
 
 pub fn router(state: AppState) -> Router {
@@ -56,7 +58,7 @@ async fn create_invoice(
     State(state): State<AppState>,
     body: axum::Json<crate::types::CreateInvoiceRequest>,
 ) -> Result<axum::Json<crate::types::CreateInvoiceResponse>, error::AppError> {
-    invoices::handle_create_invoice(state.node, state.metadata_store, body).await
+    invoices::handle_create_invoice(state.node, state.metadata_store, state.mdk_client, body).await
 }
 
 async fn get_invoice(

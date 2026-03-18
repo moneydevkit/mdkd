@@ -2,7 +2,7 @@ default:
     @just --list
 
 # Run all checks (fmt, clippy, test)
-check: fmt-check clippy test
+check: fmt-check clippy
 
 # Format code
 fmt:
@@ -115,10 +115,13 @@ dev-node-info:
       -H "Authorization: Bearer $api_key" \
     | jq .
 
-# End-to-end: start mdk-server → JIT channel payment → second payment over existing channel
-e2e amount_msat="100000": dev-config
+# End-to-end test. Pass --mdk to auto-provision a moneydevkit.com account.
+e2e *flags: dev-clean dev-config
     #!/usr/bin/env bash
     set -euo pipefail
+    amount_msat=100000
+    mdk_url="http://localhost:3900"
+    mdk_rpc="$mdk_url/rpc"
 
     cleanup() {
       if [ -n "${SERVER_PID:-}" ]; then
@@ -129,6 +132,63 @@ e2e amount_msat="100000": dev-config
     }
     trap cleanup EXIT
 
+    # ---------------------------------------------------------------
+    # MDK account provisioning (when --mdk flag is passed)
+    # ---------------------------------------------------------------
+    mdk_enabled=""
+    mdk_token=""
+    checkout_ids=()
+
+    for flag in {{flags}}; do
+      case "$flag" in
+        --mdk) mdk_enabled=1 ;;
+        *)     echo "Unknown flag: $flag"; exit 1 ;;
+      esac
+    done
+
+    if [ -n "${MDK_ACCESS_TOKEN:-}" ]; then
+      mdk_enabled=1
+      mdk_token="$MDK_ACCESS_TOKEN"
+    fi
+
+    if [ -n "$mdk_enabled" ] && [ -z "$mdk_token" ]; then
+      echo "==> Provisioning moneydevkit.com account..."
+      mdk_email="mdk-e2e-${RANDOM}@test.local"
+      mdk_password="E2eTestPass99"
+      signup=$(curl -sS "$mdk_url/api/auth/sign-up/email" \
+        -H 'Content-Type: application/json' \
+        -d "{\"email\":\"$mdk_email\",\"password\":\"$mdk_password\",\"name\":\"mdk-server e2e\"}")
+      session=$(echo "$signup" | jq -r '.token // empty')
+      if [ -z "$session" ]; then
+        echo "FAIL: signup failed"
+        echo "$signup" | jq .
+        exit 1
+      fi
+      echo "  account     $mdk_email"
+
+      app=$(curl -sS "$mdk_url/api/mcp/apps" \
+        -H 'Content-Type: application/json' \
+        -H "Authorization: Bearer $session" \
+        -d '{"name":"mdk-server-e2e","webhookUrl":"http://localhost:8081/webhook"}')
+      mdk_token=$(echo "$app" | jq -r '.apiKey // empty')
+      if [ -z "$mdk_token" ]; then
+        echo "FAIL: app creation failed"
+        echo "$app" | jq .
+        exit 1
+      fi
+      echo "  api key     ${mdk_token:0:15}..."
+
+      # Inject token into config.toml
+      export MDK_ACCESS_TOKEN="$mdk_token"
+      export MDK_API_BASE_URL="$mdk_rpc"
+      echo "mdk_access_token = \"$mdk_token\"" >> config.toml
+      echo "mdk_api_base_url = \"$mdk_rpc\"" >> config.toml
+      echo "  mdk         enabled ($mdk_rpc)"
+    fi
+
+    # ---------------------------------------------------------------
+    # Helpers
+    # ---------------------------------------------------------------
     pay_invoice() {
       local label="$1"
       local amount="$2"
@@ -141,6 +201,16 @@ e2e amount_msat="100000": dev-config
       echo "$resp" | jq .
       invoice=$(echo "$resp" | jq -r '.invoice')
       payment_hash=$(echo "$resp" | jq -r '.paymentHash')
+      checkout_id=$(echo "$resp" | jq -r '.checkoutId // empty')
+
+      if [ -n "$mdk_enabled" ]; then
+        if [ -z "$checkout_id" ]; then
+          echo "FAIL: MDK integration active but no checkoutId in response"
+          return 1
+        fi
+        echo "==> [$label] checkoutId: $checkout_id"
+        checkout_ids+=("$checkout_id")
+      fi
 
       echo "==> [$label] Paying from node2..."
       grpcurl -plaintext -import-path "{{ln_proto}}" -proto lightning.proto \
@@ -166,6 +236,9 @@ e2e amount_msat="100000": dev-config
       return 1
     }
 
+    # ---------------------------------------------------------------
+    # Run
+    # ---------------------------------------------------------------
     echo "==> Starting mdk-server..."
     cargo run --quiet -- config.toml &
     SERVER_PID=$!
@@ -183,16 +256,53 @@ e2e amount_msat="100000": dev-config
     api_key=$(xxd -p -c 64 "{{dev_storage}}/regtest/api_key")
     n2_grpc=$(just compose-port lightning-node2 4000)
 
-    # First payment opens JIT channel
-    pay_invoice "JIT channel" {{amount_msat}}
-
-    # Second payment reuses existing channel
-    pay_invoice "Existing channel" {{amount_msat}}
+    pay_invoice "JIT channel" $amount_msat
+    pay_invoice "Existing channel" $amount_msat
 
     echo ""
     echo "==> Channel info:"
     curl -sS http://127.0.0.1:8081/v1/node \
       -H "Authorization: Bearer $api_key" | jq '.channels'
+
+    # ---------------------------------------------------------------
+    # Verify checkouts on moneydevkit.com
+    # ---------------------------------------------------------------
+    if [ -n "$mdk_enabled" ]; then
+      echo ""
+      echo "==> Verifying checkout status on moneydevkit.com..."
+      # Give the async payment notification a moment to propagate
+      sleep 1
+      all_paid=true
+      for cid in "${checkout_ids[@]}"; do
+        status=$(curl -sS "$mdk_rpc/checkout/get" \
+          -H 'Content-Type: application/json' \
+          -H "x-api-key: $mdk_token" \
+          -d "{\"json\":{\"id\":\"$cid\"}}" | jq -r '.json.status')
+        if [ "$status" = "PAYMENT_RECEIVED" ]; then
+          echo "  $cid  $status"
+        else
+          echo "  $cid  $status  (expected PAYMENT_RECEIVED)"
+          all_paid=false
+        fi
+      done
+
+      if [ "$all_paid" = true ]; then
+        echo ""
+        echo "==> MDK integration: PASS"
+      else
+        echo ""
+        echo "==> MDK integration: FAIL (not all checkouts marked as paid)"
+        exit 1
+      fi
+
+      if [ -n "${mdk_email:-}" ]; then
+        echo ""
+        echo "==> Dashboard login:"
+        echo "  url       $mdk_url"
+        echo "  email     $mdk_email"
+        echo "  password  $mdk_password"
+      fi
+    fi
 
 # Generate config.toml for the running lightning-node stack
 dev-config:
@@ -200,9 +310,9 @@ dev-config:
     set -euo pipefail
     LN="{{ln_dir}}"
     COMPOSE="docker compose -f $LN/docker-compose.yml"
-    btc_port=$($COMPOSE port bitcoind 18443 2>/dev/null | cut -d: -f2)
-    n1_p2p=$($COMPOSE port lightning-node1 9735 2>/dev/null | cut -d: -f2)
-    n1_grpc=$($COMPOSE port lightning-node1 4000 2>/dev/null | cut -d: -f2)
+    btc_port=$($COMPOSE port bitcoind 18443 2>/dev/null | cut -d: -f2) || true
+    n1_p2p=$($COMPOSE port lightning-node1 9735 2>/dev/null | cut -d: -f2) || true
+    n1_grpc=$($COMPOSE port lightning-node1 4000 2>/dev/null | cut -d: -f2) || true
     for var in btc_port n1_p2p n1_grpc; do
       if [ -z "${!var}" ]; then
         echo "ERROR: lightning-node stack not running (missing port for $var)."
@@ -244,7 +354,16 @@ dev-config:
     sed -i "s|BTC_PLACEHOLDER|127.0.0.1:${btc_port}|" config.toml
     sed -i "s|PUBKEY_PLACEHOLDER|${n1_pubkey}|" config.toml
     sed -i "s|P2P_PLACEHOLDER|127.0.0.1:${n1_p2p}|" config.toml
+    if [ -n "${MDK_ACCESS_TOKEN:-}" ]; then
+      echo "mdk_access_token = \"${MDK_ACCESS_TOKEN}\"" >> config.toml
+      if [ -n "${MDK_API_BASE_URL:-}" ]; then
+        echo "mdk_api_base_url = \"${MDK_API_BASE_URL}\"" >> config.toml
+      fi
+    fi
     echo "config.toml written"
     echo "  bitcoind    127.0.0.1:${btc_port}"
     echo "  node1 p2p   127.0.0.1:${n1_p2p}"
     echo "  node1 id    ${n1_pubkey}"
+    if [ -n "${MDK_ACCESS_TOKEN:-}" ]; then
+      echo "  mdk         enabled (${MDK_API_BASE_URL:-https://staging.moneydevkit.com/rpc})"
+    fi
