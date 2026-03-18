@@ -72,13 +72,19 @@ compose-port service port:
 
 # Run mdk-server against the local lightning-node stack
 dev: dev-config
-    MDK_MNEMONIC="abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about" cargo run -- config.toml
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set -a; source .env; set +a
+    : "${MDK_ACCESS_TOKEN:?set MDK_ACCESS_TOKEN in .env}"
+    export MDK_MNEMONIC="abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+    cargo run -- config.toml
 
 # Run mdk-server against staging (mutinynet + staging.moneydevkit.com)
 dev-staging: dev-staging-config
     #!/usr/bin/env bash
     set -euo pipefail
     set -a; source .env; set +a
+    : "${MDK_ACCESS_TOKEN:?set MDK_ACCESS_TOKEN in .env}"
     : "${MDK_MNEMONIC:?set MDK_MNEMONIC in .env}"
     cargo run -- config.toml
 
@@ -87,7 +93,6 @@ dev-staging-config:
     #!/usr/bin/env bash
     set -euo pipefail
     set -a; source .env; set +a
-    : "${MDK_ACCESS_TOKEN:?set MDK_ACCESS_TOKEN in .env.staging}"
     LSP_NODE_ID="${LSP_NODE_ID:-03fd9a377576df94cc7e458471c43c400630655083dee89df66c6ad38d1b7acffd}"
     LSP_ADDRESS="${LSP_ADDRESS:-lsp.staging.moneydevkit.com:9735}"
     ESPLORA_URL="${ESPLORA_URL:-https://mutinynet.com/api}"
@@ -111,7 +116,6 @@ dev-staging-config:
     api_address = "127.0.0.1:8081"
     lsp_node_id = "$LSP_NODE_ID"
     lsp_address = "$LSP_ADDRESS"
-    mdk_access_token = "$MDK_ACCESS_TOKEN"
     mdk_api_base_url = "$MDK_API_BASE_URL"
     TOML
     echo "config.toml written (staging/mutinynet)"
@@ -385,14 +389,11 @@ dev-config:
     api_address = "127.0.0.1:8081"
     lsp_node_id = "PUBKEY_PLACEHOLDER"
     lsp_address = "P2P_PLACEHOLDER"
-    mdk_access_token = "TOKEN_PLACEHOLDER"
     TOML
     sed -i "s|DEV_STORAGE_PLACEHOLDER|{{dev_storage}}|" config.toml
     sed -i "s|BTC_PLACEHOLDER|127.0.0.1:${btc_port}|" config.toml
     sed -i "s|PUBKEY_PLACEHOLDER|${n1_pubkey}|" config.toml
     sed -i "s|P2P_PLACEHOLDER|127.0.0.1:${n1_p2p}|" config.toml
-    : "${MDK_ACCESS_TOKEN:?MDK_ACCESS_TOKEN is required (set it in env or .env)}"
-    sed -i "s|TOKEN_PLACEHOLDER|${MDK_ACCESS_TOKEN}|" config.toml
     if [ -n "${MDK_API_BASE_URL:-}" ]; then
       echo "mdk_api_base_url = \"${MDK_API_BASE_URL}\"" >> config.toml
     fi

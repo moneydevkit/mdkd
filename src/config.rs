@@ -10,7 +10,6 @@ pub struct MdkConfig {
     pub webhook_secret: Vec<u8>,
     pub lsp_node_id: String,
     pub lsp_address: String,
-    pub mdk_access_token: String,
     pub mdk_api_base_url: Option<String>,
 }
 
@@ -25,7 +24,6 @@ struct MdkSection {
     webhook_secret: Option<String>,
     lsp_node_id: Option<String>,
     lsp_address: Option<String>,
-    mdk_access_token: Option<String>,
     mdk_api_base_url: Option<String>,
 }
 
@@ -43,7 +41,6 @@ pub fn load_mdk_config(config_path: &str) -> io::Result<MdkConfig> {
         webhook_secret: None,
         lsp_node_id: None,
         lsp_address: None,
-        mdk_access_token: None,
         mdk_api_base_url: None,
     });
 
@@ -76,16 +73,11 @@ pub fn load_mdk_config(config_path: &str) -> io::Result<MdkConfig> {
         .lsp_address
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "lsp_address is required"))?;
 
-    let mdk_access_token = section.mdk_access_token.ok_or_else(|| {
-        io::Error::new(io::ErrorKind::InvalidInput, "mdk_access_token is required")
-    })?;
-
     Ok(MdkConfig {
         api_address,
         webhook_secret,
         lsp_node_id,
         lsp_address,
-        mdk_access_token,
         mdk_api_base_url: section.mdk_api_base_url,
     })
 }

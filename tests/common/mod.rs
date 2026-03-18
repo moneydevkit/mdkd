@@ -134,7 +134,6 @@ api_address = "127.0.0.1:{api_port}"
 webhook_secret = "{webhook_secret}"
 lsp_node_id = "{lsp_node_id}"
 lsp_address = "{lsp_address}"
-mdk_access_token = "{mdk_access_token}"
 mdk_api_base_url = "{mdk_api_base_url}"
 "#,
             storage_dir = storage_dir.display(),
@@ -147,6 +146,7 @@ mdk_api_base_url = "{mdk_api_base_url}"
         let mut child = Command::new(binary)
             .arg(config_path.to_str().unwrap())
             .env("MDK_MNEMONIC", mnemonic)
+            .env("MDK_ACCESS_TOKEN", mdk_access_token)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()

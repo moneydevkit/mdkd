@@ -213,11 +213,12 @@ fn main() {
             DEFAULT_BASE_URL_STAGING.to_string()
         }
     });
+    let mdk_access_token = std::env::var("MDK_ACCESS_TOKEN").unwrap_or_else(|_| {
+        error!("MDK_ACCESS_TOKEN environment variable is required");
+        std::process::exit(1);
+    });
     info!("MDK platform integration enabled ({})", base_url);
-    let mdk_client = Arc::new(MdkApiClient::new(
-        base_url,
-        mdk_config.mdk_access_token.clone(),
-    ));
+    let mdk_client = Arc::new(MdkApiClient::new(base_url, mdk_access_token));
 
     info!("Starting up...");
     match node.start() {
