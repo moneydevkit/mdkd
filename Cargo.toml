@@ -25,4 +25,5 @@ time = { version = "0.3", features = ["formatting"] }
 
 [dev-dependencies]
 corepc-node = { version = "0.10", features = ["29_0"] }
+ldk-node-lsp = { package = "ldk-node", git = "https://github.com/moneydevkit/ldk-node", rev = "e5fcce065fa97c522de0f8fec87beb9e7e541456" }
 tempfile = "3"

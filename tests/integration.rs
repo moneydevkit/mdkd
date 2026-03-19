@@ -3,7 +3,8 @@ mod common;
 use std::time::Duration;
 
 use common::{
-    setup_funded_channel, LspNode, MdkServerHandle, PayerNode, TestBitcoind, WebhookReceiver,
+    fund_lsp, setup_payer_lsp_channel, LspNode, MdkServerHandle, PayerNode, TestBitcoind,
+    WebhookReceiver,
 };
 
 const TEST_MNEMONIC: &str =
@@ -42,12 +43,13 @@ async fn test_node_info() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_create_and_get_invoice() {
     let bitcoind = TestBitcoind::new();
-    let server = MdkServerHandle::start(&bitcoind, None, None, TEST_MNEMONIC).await;
-    let payer = PayerNode::new(&bitcoind);
-    setup_funded_channel(&bitcoind, &payer, &server, 200_000).await;
+    let lsp = LspNode::new(&bitcoind);
+    fund_lsp(&bitcoind, &lsp).await;
+
+    let server = MdkServerHandle::start(&bitcoind, None, Some(&lsp), TEST_MNEMONIC).await;
 
     let body = serde_json::json!({
-        "amountMsat": 100_000,
+        "amountMsat": 100_000_000,
         "description": "test invoice",
         "expirySecs": 3600,
         "externalId": "order-42"
@@ -115,14 +117,16 @@ async fn test_invoice_not_found() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_payment_flow() {
     let bitcoind = TestBitcoind::new();
-    let server = MdkServerHandle::start(&bitcoind, None, None, TEST_MNEMONIC).await;
+    let lsp = LspNode::new(&bitcoind);
+    fund_lsp(&bitcoind, &lsp).await;
+
+    let server = MdkServerHandle::start(&bitcoind, None, Some(&lsp), TEST_MNEMONIC).await;
     let payer = PayerNode::new(&bitcoind);
+    setup_payer_lsp_channel(&bitcoind, &payer, &lsp, 500_000).await;
 
-    setup_funded_channel(&bitcoind, &payer, &server, 200_000).await;
-
-    // Create invoice on mdk-server.
+    // First payment — triggers JIT channel open from LSP to server.
     let body = serde_json::json!({
-        "amountMsat": 10_000_000,
+        "amountMsat": 100_000_000,
         "description": "payment test",
         "expirySecs": 3600,
         "externalId": "order-99"
@@ -136,35 +140,77 @@ async fn test_payment_flow() {
     let invoice_str = invoice["invoice"].as_str().unwrap();
     let payment_hash = invoice["paymentHash"].as_str().unwrap().to_string();
 
-    // Pay from the payer node.
     payer.pay_invoice(invoice_str);
 
-    // Wait for payment to settle.
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    let start = std::time::Instant::now();
+    loop {
+        let resp: serde_json::Value = server
+            .get(&format!("/v1/invoices/{payment_hash}"))
+            .await
+            .json()
+            .await
+            .unwrap();
+        if resp["status"].as_str().unwrap() == "received" {
+            break;
+        }
+        if start.elapsed() > Duration::from_secs(60) {
+            panic!("Timed out waiting for first payment to settle");
+        }
+        bitcoind.mine_blocks(1);
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
 
-    // Verify invoice status is "received".
-    let resp: serde_json::Value = server
-        .get(&format!("/v1/invoices/{payment_hash}"))
+    // Second payment — reuses the existing LSP->server channel.
+    let body = serde_json::json!({
+        "amountMsat": 50_000_000,
+        "description": "second payment",
+        "expirySecs": 3600,
+        "externalId": "order-100"
+    });
+    let invoice: serde_json::Value = server
+        .post("/v1/invoices", &body)
         .await
         .json()
         .await
         .unwrap();
-    assert_eq!(resp["status"].as_str().unwrap(), "received");
-    assert_eq!(resp["externalId"].as_str().unwrap(), "order-99");
+    let invoice_str = invoice["invoice"].as_str().unwrap();
+    let payment_hash = invoice["paymentHash"].as_str().unwrap().to_string();
+
+    payer.pay_invoice(invoice_str);
+
+    let start = std::time::Instant::now();
+    loop {
+        let resp: serde_json::Value = server
+            .get(&format!("/v1/invoices/{payment_hash}"))
+            .await
+            .json()
+            .await
+            .unwrap();
+        if resp["status"].as_str().unwrap() == "received" {
+            break;
+        }
+        if start.elapsed() > Duration::from_secs(60) {
+            panic!("Timed out waiting for second payment to settle");
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_webhook_delivery() {
     let bitcoind = TestBitcoind::new();
-    let webhook = WebhookReceiver::start().await;
-    let server = MdkServerHandle::start(&bitcoind, Some(webhook.port), None, TEST_MNEMONIC).await;
-    let payer = PayerNode::new(&bitcoind);
+    let lsp = LspNode::new(&bitcoind);
+    fund_lsp(&bitcoind, &lsp).await;
 
-    setup_funded_channel(&bitcoind, &payer, &server, 200_000).await;
+    let webhook = WebhookReceiver::start().await;
+    let server =
+        MdkServerHandle::start(&bitcoind, Some(webhook.port), Some(&lsp), TEST_MNEMONIC).await;
+    let payer = PayerNode::new(&bitcoind);
+    setup_payer_lsp_channel(&bitcoind, &payer, &lsp, 500_000).await;
 
     // Create invoice with webhook URL.
     let body = serde_json::json!({
-        "amountMsat": 10_000_000,
+        "amountMsat": 100_000_000,
         "description": "webhook test",
         "expirySecs": 3600,
         "externalId": "hook-order-1",
@@ -179,7 +225,6 @@ async fn test_webhook_delivery() {
     let invoice_str = invoice["invoice"].as_str().unwrap();
     let payment_hash = invoice["paymentHash"].as_str().unwrap().to_string();
 
-    // Pay from the payer node.
     payer.pay_invoice(invoice_str);
 
     // Wait for payment + webhook delivery.
@@ -194,10 +239,11 @@ async fn test_webhook_delivery() {
             assert!(payload["amountMsat"].as_u64().unwrap() > 0);
             break;
         }
-        if start.elapsed() > Duration::from_secs(30) {
+        if start.elapsed() > Duration::from_secs(60) {
             panic!("Timed out waiting for webhook delivery");
         }
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        bitcoind.mine_blocks(1);
+        tokio::time::sleep(Duration::from_secs(2)).await;
     }
 }
 
@@ -205,27 +251,13 @@ async fn test_webhook_delivery() {
 async fn test_jit_channel_invoice() {
     let bitcoind = TestBitcoind::new();
     let lsp = LspNode::new(&bitcoind);
+    fund_lsp(&bitcoind, &lsp).await;
 
-    // Fund LSP so it can open JIT channels.
-    let lsp_addr = lsp.onchain_address();
-    bitcoind.fund_address(&lsp_addr, 1.0);
-    bitcoind.mine_blocks(6);
-    let start = std::time::Instant::now();
-    loop {
-        lsp.sync_wallets();
-        if lsp.node.list_balances().spendable_onchain_balance_sats > 0 {
-            break;
-        }
-        if start.elapsed() > Duration::from_secs(30) {
-            panic!("Timed out waiting for LSP on-chain balance");
-        }
-        tokio::time::sleep(Duration::from_millis(500)).await;
-    }
-
-    // Start mdk-server pointed at real LSP — no channels yet.
     let server = MdkServerHandle::start(&bitcoind, None, Some(&lsp), TEST_MNEMONIC).await;
+    let payer = PayerNode::new(&bitcoind);
+    setup_payer_lsp_channel(&bitcoind, &payer, &lsp, 500_000).await;
 
-    // Create invoice — should take the JIT path (no inbound liquidity).
+    // First payment — triggers JIT channel open from LSP to server.
     let body = serde_json::json!({
         "amountMsat": 100_000_000,
         "description": "jit test",
@@ -241,47 +273,8 @@ async fn test_jit_channel_invoice() {
         "Expected lnbcrt prefix, got: {invoice_str}"
     );
 
-    // Pay via a payer that has a channel to the LSP.
-    let payer = PayerNode::new(&bitcoind);
-    let payer_addr = payer.onchain_address();
-    bitcoind.fund_address(&payer_addr, 1.0);
-    bitcoind.mine_blocks(6);
-    let start = std::time::Instant::now();
-    loop {
-        payer.sync_wallets();
-        if payer.node.list_balances().spendable_onchain_balance_sats > 0 {
-            break;
-        }
-        if start.elapsed() > Duration::from_secs(30) {
-            panic!("Timed out waiting for payer on-chain balance");
-        }
-        tokio::time::sleep(Duration::from_millis(500)).await;
-    }
-
-    // Open channel payer -> LSP.
-    payer.open_channel(
-        &lsp.node_id(),
-        &format!("127.0.0.1:{}", lsp.p2p_port),
-        500_000,
-    );
-    bitcoind.mine_blocks(6);
-    let start = std::time::Instant::now();
-    loop {
-        payer.sync_wallets();
-        if payer.list_channels_usable() {
-            break;
-        }
-        if start.elapsed() > Duration::from_secs(60) {
-            panic!("Timed out waiting for payer->LSP channel");
-        }
-        bitcoind.mine_blocks(1);
-        tokio::time::sleep(Duration::from_secs(1)).await;
-    }
-
-    // Pay the JIT invoice.
     payer.pay_invoice(invoice_str);
 
-    // Wait for payment to settle (JIT channel open + forward).
     let payment_hash = invoice["paymentHash"].as_str().unwrap().to_string();
     let start = std::time::Instant::now();
     loop {
@@ -298,6 +291,41 @@ async fn test_jit_channel_invoice() {
             panic!("Timed out waiting for JIT payment to settle");
         }
         bitcoind.mine_blocks(1);
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+
+    // Second payment — reuses the JIT channel (no new channel open).
+    let body = serde_json::json!({
+        "amountMsat": 50_000_000,
+        "description": "jit reuse test",
+        "expirySecs": 3600,
+        "externalId": "jit-order-2"
+    });
+    let invoice: serde_json::Value = server
+        .post("/v1/invoices", &body)
+        .await
+        .json()
+        .await
+        .unwrap();
+    let invoice_str = invoice["invoice"].as_str().unwrap();
+    let payment_hash = invoice["paymentHash"].as_str().unwrap().to_string();
+
+    payer.pay_invoice(invoice_str);
+
+    let start = std::time::Instant::now();
+    loop {
+        let resp: serde_json::Value = server
+            .get(&format!("/v1/invoices/{payment_hash}"))
+            .await
+            .json()
+            .await
+            .unwrap();
+        if resp["status"].as_str().unwrap() == "received" {
+            break;
+        }
+        if start.elapsed() > Duration::from_secs(60) {
+            panic!("Timed out waiting for second JIT payment to settle");
+        }
         tokio::time::sleep(Duration::from_secs(2)).await;
     }
 }

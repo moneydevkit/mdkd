@@ -11,8 +11,13 @@ use ldk_server::ldk_node::bitcoin::Network;
 use ldk_server::ldk_node::config::Config as LdkNodeConfig;
 use ldk_server::ldk_node::lightning::ln::msgs::SocketAddress;
 use ldk_server::ldk_node::lightning_invoice::Bolt11Invoice;
-use ldk_server::ldk_node::liquidity::LSPS4ServiceConfig;
 use ldk_server::ldk_node::{Builder, Node};
+
+use ldk_node_lsp::config::Config as LspNodeConfig;
+use ldk_node_lsp::lightning::ln::msgs::SocketAddress as LspSocketAddress;
+use ldk_node_lsp::liquidity::LSPS4ServiceConfig;
+use ldk_node_lsp::Builder as LspBuilder;
+use ldk_node_lsp::Node as LspLdkNode;
 
 // ---------------------------------------------------------------------------
 // TestBitcoind
@@ -345,7 +350,7 @@ impl Drop for PayerNode {
 // ---------------------------------------------------------------------------
 
 pub struct LspNode {
-    pub node: Arc<Node>,
+    pub node: Arc<LspLdkNode>,
     pub p2p_port: u16,
     _storage_dir: PathBuf,
 }
@@ -356,17 +361,17 @@ impl LspNode {
         let storage_dir = tempfile::tempdir().unwrap().into_path();
         let p2p_port = find_available_port();
 
-        let config = LdkNodeConfig {
-            network: Network::Regtest,
+        let config = LspNodeConfig {
+            network: ldk_node_lsp::bitcoin::Network::Regtest,
             storage_dir_path: storage_dir.to_str().unwrap().to_string(),
-            listening_addresses: Some(vec![SocketAddress::from_str(&format!(
+            listening_addresses: Some(vec![LspSocketAddress::from_str(&format!(
                 "127.0.0.1:{p2p_port}"
             ))
             .unwrap()]),
             ..Default::default()
         };
 
-        let mut builder = Builder::from_config(config);
+        let mut builder = LspBuilder::from_config(config);
         let (rpc_host, rpc_port, rpc_user, rpc_password) = bitcoind.rpc_details();
         builder.set_chain_source_bitcoind_rpc(rpc_host, rpc_port, rpc_user, rpc_password);
 
@@ -580,23 +585,38 @@ impl Drop for WebhookReceiver {
 }
 
 // ---------------------------------------------------------------------------
-// Channel setup helper
+// Channel setup helpers
 // ---------------------------------------------------------------------------
 
-pub async fn setup_funded_channel(
+/// Fund the LSP on-chain and wait for balance to be confirmed.
+pub async fn fund_lsp(bitcoind: &TestBitcoind, lsp: &LspNode) {
+    let lsp_addr = lsp.onchain_address();
+    bitcoind.fund_address(&lsp_addr, 1.0);
+    bitcoind.mine_blocks(6);
+    let start = std::time::Instant::now();
+    loop {
+        lsp.sync_wallets();
+        if lsp.node.list_balances().spendable_onchain_balance_sats > 0 {
+            break;
+        }
+        if start.elapsed() > Duration::from_secs(30) {
+            panic!("Timed out waiting for LSP on-chain balance");
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+}
+
+/// Fund payer and open a confirmed channel from payer to the LSP.
+pub async fn setup_payer_lsp_channel(
     bitcoind: &TestBitcoind,
     payer: &PayerNode,
-    server: &MdkServerHandle,
+    lsp: &LspNode,
     channel_amount_sats: u64,
 ) {
-    // Fund payer on-chain. The channel opener (payer) pays on-chain fees.
-    // mdk-server doesn't need separate funding — it gets anchor reserves
-    // from the channel open's change output.
     let payer_addr = payer.onchain_address();
     bitcoind.fund_address(&payer_addr, 1.0);
     bitcoind.mine_blocks(6);
 
-    // Wait for payer to sync.
     let start = std::time::Instant::now();
     loop {
         payer.sync_wallets();
@@ -609,14 +629,13 @@ pub async fn setup_funded_channel(
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
 
-    // Open channel payer -> mdk-server.
-    let server_addr_str = format!("127.0.0.1:{}", server.p2p_port);
-    payer.open_channel(&server.node_id, &server_addr_str, channel_amount_sats);
-
-    // Mine to confirm.
+    payer.open_channel(
+        &lsp.node_id(),
+        &format!("127.0.0.1:{}", lsp.p2p_port),
+        channel_amount_sats,
+    );
     bitcoind.mine_blocks(6);
 
-    // Wait for channel to become usable on payer side.
     let start = std::time::Instant::now();
     loop {
         payer.sync_wallets();
@@ -636,7 +655,7 @@ pub async fn setup_funded_channel(
                 })
                 .collect();
             panic!(
-                "Timed out waiting for usable channel. Channels: {:?}",
+                "Timed out waiting for payer->LSP channel. Channels: {:?}",
                 channels
             );
         }

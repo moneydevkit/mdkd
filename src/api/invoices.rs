@@ -135,20 +135,9 @@ fn create_invoice(
     description: &Bolt11InvoiceDescription,
     expiry_secs: u32,
 ) -> Result<Bolt11Invoice, AppError> {
-    let has_inbound = node
-        .list_channels()
-        .iter()
-        .any(|c| c.is_usable && c.inbound_capacity_msat >= amount_msat);
-
-    if has_inbound {
-        node.bolt11_payment()
-            .receive(amount_msat, description, expiry_secs)
-            .map_err(|e| AppError::Internal(format!("Failed to create invoice: {}", e)))
-    } else {
-        node.bolt11_payment()
-            .receive_via_lsps4_jit_channel(Some(amount_msat), description, expiry_secs)
-            .map_err(|e| AppError::Internal(format!("Failed to create JIT invoice: {}", e)))
-    }
+    node.bolt11_payment()
+        .receive_via_lsps4_jit_channel(Some(amount_msat), description, expiry_secs)
+        .map_err(|e| AppError::Internal(format!("Failed to create JIT invoice: {}", e)))
 }
 
 fn extract_scid(invoice: &Bolt11Invoice) -> String {
