@@ -1,83 +1,85 @@
-use std::net::SocketAddr;
-use std::{fs, io};
+use std::io;
 
-use hex::FromHex;
-use serde::Deserialize;
+use ldk_server::ldk_node::bitcoin::Network;
 
-#[derive(Debug)]
-pub struct MdkConfig {
-    pub api_address: SocketAddr,
-    pub webhook_secret: Vec<u8>,
-    pub lsp_node_id: String,
-    pub lsp_address: String,
-    pub mdk_api_base_url: Option<String>,
+/// Hard-coded LSP infrastructure for a production network.
+pub struct LspInfra {
+    pub lsp_node_id: &'static str,
+    pub lsp_address: &'static str,
+    pub mdk_api_base_url: &'static str,
 }
 
-#[derive(Deserialize)]
-struct MdkTomlRoot {
-    mdk: Option<MdkSection>,
-}
-
-#[derive(Deserialize)]
-struct MdkSection {
-    api_address: Option<String>,
-    webhook_secret: Option<String>,
-    lsp_node_id: Option<String>,
-    lsp_address: Option<String>,
-    mdk_api_base_url: Option<String>,
-}
-
-pub fn load_mdk_config(config_path: &str) -> io::Result<MdkConfig> {
-    let content = fs::read_to_string(config_path)?;
-    let root: MdkTomlRoot = toml::from_str(&content).map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("Failed to parse config: {}", e),
-        )
-    })?;
-
-    let section = root.mdk.unwrap_or(MdkSection {
-        api_address: None,
-        webhook_secret: None,
-        lsp_node_id: None,
-        lsp_address: None,
-        mdk_api_base_url: None,
-    });
-
-    let api_address = section
-        .api_address
-        .unwrap_or_else(|| "127.0.0.1:8080".to_string())
-        .parse::<SocketAddr>()
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-
-    let webhook_secret = match section.webhook_secret {
-        Some(hex_str) => Vec::<u8>::from_hex(&hex_str).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::InvalidInput,
-                format!("Invalid webhook_secret hex: {}", e),
-            )
-        })?,
-        None => {
-            let mut secret = vec![0u8; 32];
-            getrandom::getrandom(&mut secret).map_err(|e| {
-                io::Error::other(format!("Failed to generate webhook secret: {}", e))
-            })?;
-            secret
+impl LspInfra {
+    pub fn for_network(network: Network) -> Option<Self> {
+        match network {
+            Network::Bitcoin => Some(LspInfra {
+                lsp_node_id: "02a63339cc6b913b6330bd61b2f469af8785a6011a6305bb102298a8e76697473b",
+                lsp_address: "lsp.moneydevkit.com:9735",
+                mdk_api_base_url: "https://moneydevkit.com/rpc",
+            }),
+            Network::Signet => Some(LspInfra {
+                lsp_node_id: "03fd9a377576df94cc7e458471c43c400630655083dee89df66c6ad38d1b7acffd",
+                lsp_address: "lsp.staging.moneydevkit.com:9735",
+                mdk_api_base_url: "https://staging.moneydevkit.com/rpc",
+            }),
+            _ => None,
         }
-    };
+    }
+}
 
-    let lsp_node_id = section
-        .lsp_node_id
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "lsp_node_id is required"))?;
-    let lsp_address = section
-        .lsp_address
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "lsp_address is required"))?;
+/// Resolved infrastructure for the current network.
+pub enum NetworkInfra {
+    /// Production: all infra baked in. Config.toml chain source is overridden.
+    Production(LspInfra),
+    /// Regtest: LSP + API URL from env vars, chain source from config.toml.
+    Regtest {
+        lsp_node_id: String,
+        lsp_address: String,
+        mdk_api_base_url: String,
+    },
+}
 
-    Ok(MdkConfig {
-        api_address,
-        webhook_secret,
-        lsp_node_id,
-        lsp_address,
-        mdk_api_base_url: section.mdk_api_base_url,
+impl NetworkInfra {
+    pub fn resolve(network: Network) -> io::Result<Self> {
+        match LspInfra::for_network(network) {
+            Some(infra) => Ok(NetworkInfra::Production(infra)),
+            None => Ok(NetworkInfra::Regtest {
+                lsp_node_id: env_required("MDK_LSP_NODE_ID")?,
+                lsp_address: env_required("MDK_LSP_ADDRESS")?,
+                mdk_api_base_url: env_required("MDK_API_BASE_URL")?,
+            }),
+        }
+    }
+
+    pub fn lsp_node_id(&self) -> &str {
+        match self {
+            NetworkInfra::Production(i) => i.lsp_node_id,
+            NetworkInfra::Regtest { lsp_node_id, .. } => lsp_node_id,
+        }
+    }
+
+    pub fn lsp_address(&self) -> &str {
+        match self {
+            NetworkInfra::Production(i) => i.lsp_address,
+            NetworkInfra::Regtest { lsp_address, .. } => lsp_address,
+        }
+    }
+
+    pub fn mdk_api_base_url(&self) -> &str {
+        match self {
+            NetworkInfra::Production(i) => i.mdk_api_base_url,
+            NetworkInfra::Regtest {
+                mdk_api_base_url, ..
+            } => mdk_api_base_url,
+        }
+    }
+}
+
+fn env_required(name: &str) -> io::Result<String> {
+    std::env::var(name).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{name} environment variable is required for regtest"),
+        )
     })
 }

@@ -1,12 +1,11 @@
 use std::io::{BufRead, BufReader};
 use std::net::TcpListener;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use hex::DisplayHex;
 use ldk_server::ldk_node::bitcoin::Network;
 use ldk_server::ldk_node::config::Config as LdkNodeConfig;
 use ldk_server::ldk_node::lightning::ln::msgs::SocketAddress;
@@ -101,7 +100,6 @@ impl MdkServerHandle {
 
         let api_port = find_available_port();
         let p2p_port = find_available_port();
-        let rest_port = find_available_port(); // dummy, never bound by mdk-server
 
         let (rpc_host, rpc_port, rpc_user, rpc_password) = bitcoind.rpc_details();
         let rpc_address = format!("{rpc_host}:{rpc_port}");
@@ -119,12 +117,13 @@ impl MdkServerHandle {
         let mock_mdk = MockMdkApi::start().await;
         let mdk_api_base_url = mock_mdk.base_url();
         let mdk_access_token = "test_token_dummy";
+        let api_key = "test_api_key";
 
         let config = format!(
             r#"[node]
 network = "regtest"
 listening_addresses = ["127.0.0.1:{p2p_port}"]
-rest_service_address = "127.0.0.1:{rest_port}"
+rest_service_address = "127.0.0.1:{api_port}"
 
 [storage.disk]
 dir_path = "{storage_dir}"
@@ -133,13 +132,6 @@ dir_path = "{storage_dir}"
 rpc_address = "{rpc_address}"
 rpc_user = "{rpc_user}"
 rpc_password = "{rpc_password}"
-
-[mdk]
-api_address = "127.0.0.1:{api_port}"
-webhook_secret = "{webhook_secret}"
-lsp_node_id = "{lsp_node_id}"
-lsp_address = "{lsp_address}"
-mdk_api_base_url = "{mdk_api_base_url}"
 "#,
             storage_dir = storage_dir.display(),
         );
@@ -152,6 +144,11 @@ mdk_api_base_url = "{mdk_api_base_url}"
             .arg(config_path.to_str().unwrap())
             .env("MDK_MNEMONIC", mnemonic)
             .env("MDK_ACCESS_TOKEN", mdk_access_token)
+            .env("MDK_SERVER_SECRET", api_key)
+            .env("MDK_LSP_NODE_ID", &lsp_node_id)
+            .env("MDK_LSP_ADDRESS", &lsp_address)
+            .env("MDK_API_BASE_URL", &mdk_api_base_url)
+            .env("MDK_WEBHOOK_SECRET", &webhook_secret)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -175,13 +172,6 @@ mdk_api_base_url = "{mdk_api_base_url}"
             }
         });
 
-        let network_dir = storage_dir.join("regtest");
-        let api_key_path = network_dir.join("api_key");
-        wait_for_file(&api_key_path, Duration::from_secs(30)).await;
-
-        let api_key_bytes = std::fs::read(&api_key_path).unwrap();
-        let api_key = api_key_bytes.to_lower_hex_string();
-
         let client = reqwest::Client::new();
 
         let mut handle = Self {
@@ -189,7 +179,7 @@ mdk_api_base_url = "{mdk_api_base_url}"
             api_port,
             p2p_port,
             storage_dir,
-            api_key,
+            api_key: api_key.to_string(),
             node_id: String::new(),
             client,
             _mock_mdk: mock_mdk,
@@ -676,12 +666,3 @@ pub fn find_available_port() -> u16 {
         .port()
 }
 
-async fn wait_for_file(path: &Path, timeout: Duration) {
-    let start = std::time::Instant::now();
-    while !path.exists() {
-        if start.elapsed() > timeout {
-            panic!("Timed out waiting for file: {:?}", path);
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-}

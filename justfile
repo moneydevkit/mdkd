@@ -76,6 +76,7 @@ dev: dev-config
     set -euo pipefail
     set -a; source .env; set +a
     : "${MDK_ACCESS_TOKEN:?set MDK_ACCESS_TOKEN in .env}"
+    : "${MDK_SERVER_SECRET:?set MDK_SERVER_SECRET in .env}"
     export MDK_MNEMONIC="abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
     cargo run -- config.toml
 
@@ -85,6 +86,7 @@ dev-staging: dev-staging-config
     set -euo pipefail
     set -a; source .env; set +a
     : "${MDK_ACCESS_TOKEN:?set MDK_ACCESS_TOKEN in .env}"
+    : "${MDK_SERVER_SECRET:?set MDK_SERVER_SECRET in .env}"
     : "${MDK_MNEMONIC:?set MDK_MNEMONIC in .env}"
     cargo run -- config.toml
 
@@ -92,16 +94,12 @@ dev-staging: dev-staging-config
 dev-staging-config:
     #!/usr/bin/env bash
     set -euo pipefail
-    set -a; source .env; set +a
-    LSP_NODE_ID="${LSP_NODE_ID:-03fd9a377576df94cc7e458471c43c400630655083dee89df66c6ad38d1b7acffd}"
-    LSP_ADDRESS="${LSP_ADDRESS:-lsp.staging.moneydevkit.com:9735}"
     ESPLORA_URL="${ESPLORA_URL:-https://mutinynet.com/api}"
-    MDK_API_BASE_URL="${MDK_API_BASE_URL:-https://staging.moneydevkit.com/rpc}"
     cat > config.toml << TOML
     [node]
     network = "signet"
     listening_addresses = ["127.0.0.1:19735"]
-    rest_service_address = "127.0.0.1:3099"
+    rest_service_address = "127.0.0.1:8081"
 
     [storage.disk]
     dir_path = "{{dev_storage}}"
@@ -111,17 +109,9 @@ dev-staging-config:
 
     [esplora]
     server_url = "$ESPLORA_URL"
-
-    [mdk]
-    api_address = "127.0.0.1:8081"
-    lsp_node_id = "$LSP_NODE_ID"
-    lsp_address = "$LSP_ADDRESS"
-    mdk_api_base_url = "$MDK_API_BASE_URL"
     TOML
-    echo "config.toml written (staging/mutinynet)"
+    echo "config.toml written (staging/signet)"
     echo "  esplora     $ESPLORA_URL"
-    echo "  lsp         $LSP_NODE_ID"
-    echo "  mdk         $MDK_API_BASE_URL"
 
 # Wipe mdk-server local state (seed, db, api key)
 dev-clean:
@@ -131,9 +121,12 @@ dev-clean:
 
 [private]
 api-key:
-    @xxd -p -c 64 "{{dev_storage}}/$(grep -m1 'network' config.toml | sed 's/.*= *\"//;s/\"//')/api_key"
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set -a; source .env; set +a
+    echo "$MDK_SERVER_SECRET"
 
-# Print the hex API key for the running mdk-server
+# Print the server secret for the running mdk-server
 dev-api-key:
     @just api-key
 
@@ -230,7 +223,12 @@ e2e: dev-clean
 
     export MDK_ACCESS_TOKEN="$mdk_token"
     export MDK_API_BASE_URL="$mdk_rpc"
+    export MDK_WEBHOOK_SECRET="${MDK_WEBHOOK_SECRET:-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}"
+    export MDK_SERVER_SECRET="${MDK_SERVER_SECRET:-e2e_test_secret}"
     just dev-config
+    # Source .env written by dev-config (picks up MDK_LSP_NODE_ID etc.)
+    set -a; source .env; set +a
+    api_key="$MDK_SERVER_SECRET"
 
     # ---------------------------------------------------------------
     # Helpers
@@ -298,7 +296,6 @@ e2e: dev-clean
       sleep 0.5
     done
 
-    api_key=$(xxd -p -c 64 "{{dev_storage}}/$(grep -m1 'network' config.toml | sed 's/.*= *\"//;s/\"//')/api_key")
     n2_grpc=$(just compose-port lightning-node2 4000)
 
     pay_invoice "JIT channel" $amount_msat
@@ -344,7 +341,7 @@ e2e: dev-clean
     echo "  email     $mdk_email"
     echo "  password  $mdk_password"
 
-# Generate config.toml for the running lightning-node stack
+# Generate config.toml + .env for the running lightning-node stack
 dev-config:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -368,37 +365,32 @@ dev-config:
       echo "ERROR: could not fetch node1 pubkey via gRPC on port $n1_grpc"
       exit 1
     fi
-    cat > config.toml << 'TOML'
+    cat > config.toml << TOML
     [node]
     network = "regtest"
     listening_addresses = ["127.0.0.1:19735"]
-    rest_service_address = "127.0.0.1:3099"
+    rest_service_address = "127.0.0.1:8081"
 
     [storage.disk]
-    dir_path = "DEV_STORAGE_PLACEHOLDER"
+    dir_path = "{{dev_storage}}"
 
     [log]
     level = "Debug"
 
     [bitcoind]
-    rpc_address = "BTC_PLACEHOLDER"
+    rpc_address = "127.0.0.1:${btc_port}"
     rpc_user = "bitcoind"
     rpc_password = "bitcoind"
-
-    [mdk]
-    api_address = "127.0.0.1:8081"
-    lsp_node_id = "PUBKEY_PLACEHOLDER"
-    lsp_address = "P2P_PLACEHOLDER"
     TOML
-    sed -i "s|DEV_STORAGE_PLACEHOLDER|{{dev_storage}}|" config.toml
-    sed -i "s|BTC_PLACEHOLDER|127.0.0.1:${btc_port}|" config.toml
-    sed -i "s|PUBKEY_PLACEHOLDER|${n1_pubkey}|" config.toml
-    sed -i "s|P2P_PLACEHOLDER|127.0.0.1:${n1_p2p}|" config.toml
-    if [ -n "${MDK_API_BASE_URL:-}" ]; then
-      echo "mdk_api_base_url = \"${MDK_API_BASE_URL}\"" >> config.toml
-    fi
+    cat > .env << ENV
+    MDK_LSP_NODE_ID=${n1_pubkey}
+    MDK_LSP_ADDRESS=127.0.0.1:${n1_p2p}
+    MDK_API_BASE_URL=${MDK_API_BASE_URL:-http://localhost:3900/rpc}
+    MDK_WEBHOOK_SECRET=${MDK_WEBHOOK_SECRET:-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
+    MDK_SERVER_SECRET=${MDK_SERVER_SECRET:-dev_secret}
+    ENV
     echo "config.toml written"
     echo "  bitcoind    127.0.0.1:${btc_port}"
     echo "  node1 p2p   127.0.0.1:${n1_p2p}"
     echo "  node1 id    ${n1_pubkey}"
-    echo "  mdk         ${MDK_API_BASE_URL:-https://staging.moneydevkit.com/rpc}"
+    echo "  mdk api     ${MDK_API_BASE_URL:-http://localhost:3900/rpc}"

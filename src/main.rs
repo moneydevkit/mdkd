@@ -6,14 +6,12 @@ mod store;
 mod types;
 mod webhook;
 
-use std::fs;
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
 use clap::Parser;
-use hex::DisplayHex;
+use hex::FromHex;
 use ldk_server::io::persist::paginated_kv_store::PaginatedKVStore;
 use ldk_server::io::persist::sqlite_store::SqliteStore;
 use ldk_server::ldk_node::bip39::Mnemonic;
@@ -23,15 +21,13 @@ use ldk_server::ldk_node::lightning::ln::msgs::SocketAddress;
 use ldk_server::ldk_node::Builder;
 use ldk_server::util::config::{get_default_data_dir, load_config, ChainSource};
 use ldk_server::util::logger::ServerLogger;
-use log::{debug, error, info};
+use log::{error, info};
 use tokio::signal::unix::SignalKind;
 
 use crate::api::AppState;
-use crate::config::load_mdk_config;
-use crate::mdk::client::{MdkApiClient, DEFAULT_BASE_URL_MAINNET, DEFAULT_BASE_URL_STAGING};
+use crate::config::NetworkInfra;
+use crate::mdk::client::MdkApiClient;
 use crate::store::invoice_metadata::InvoiceMetadataStore;
-
-const API_KEY_FILE: &str = "api_key";
 
 #[derive(Parser)]
 #[command(version, about = "MDK Server")]
@@ -56,12 +52,23 @@ fn main() {
         }
     };
 
-    let mdk_config = match load_mdk_config(&args.config_file) {
-        Ok(c) => c,
+    let infra = match NetworkInfra::resolve(config_file.network) {
+        Ok(i) => i,
         Err(e) => {
-            eprintln!("Invalid [mdk] configuration: {e}");
+            eprintln!("Failed to resolve network infrastructure: {e}");
             std::process::exit(1);
         }
+    };
+
+    let webhook_secret = {
+        let hex_str = std::env::var("MDK_WEBHOOK_SECRET").unwrap_or_else(|_| {
+            error!("MDK_WEBHOOK_SECRET environment variable is required");
+            std::process::exit(1);
+        });
+        Vec::<u8>::from_hex(&hex_str).unwrap_or_else(|e| {
+            error!("Invalid MDK_WEBHOOK_SECRET hex: {e}");
+            std::process::exit(1);
+        })
     };
 
     let storage_dir: PathBuf = match config_file.storage_dir_path {
@@ -96,13 +103,10 @@ fn main() {
         }
     };
 
-    let api_key = match load_or_generate_api_key(&network_dir) {
-        Ok(key) => key,
-        Err(e) => {
-            eprintln!("Failed to load or generate API key: {e}");
-            std::process::exit(1);
-        }
-    };
+    let api_key = std::env::var("MDK_SERVER_SECRET").unwrap_or_else(|_| {
+        error!("MDK_SERVER_SECRET environment variable is required");
+        std::process::exit(1);
+    });
 
     let ldk_node_config = LdkNodeConfig {
         storage_dir_path: network_dir.to_str().unwrap().to_string(),
@@ -143,16 +147,16 @@ fn main() {
         builder.set_pathfinding_scores_source(url);
     }
 
-    let lsp_pubkey = PublicKey::from_str(&mdk_config.lsp_node_id).unwrap_or_else(|e| {
+    let lsp_pubkey = PublicKey::from_str(infra.lsp_node_id()).unwrap_or_else(|e| {
         error!("Bad lsp_node_id: {e}");
         std::process::exit(1);
     });
-    let lsp_addr = SocketAddress::from_str(&mdk_config.lsp_address).unwrap_or_else(|e| {
+    let lsp_addr = SocketAddress::from_str(infra.lsp_address()).unwrap_or_else(|e| {
         error!("Bad lsp_address: {e}");
         std::process::exit(1);
     });
     builder.set_liquidity_source_lsps4(lsp_pubkey, lsp_addr);
-    info!("LSPS4 liquidity source: {}", mdk_config.lsp_node_id);
+    info!("LSPS4 liquidity source: {}", infra.lsp_node_id());
 
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -205,14 +209,7 @@ fn main() {
         }
     };
 
-    let base_url = mdk_config.mdk_api_base_url.clone().unwrap_or_else(|| {
-        let network = config_file.network.to_string();
-        if network == "bitcoin" {
-            DEFAULT_BASE_URL_MAINNET.to_string()
-        } else {
-            DEFAULT_BASE_URL_STAGING.to_string()
-        }
-    });
+    let base_url = infra.mdk_api_base_url().to_string();
     let mdk_access_token = std::env::var("MDK_ACCESS_TOKEN").unwrap_or_else(|_| {
         error!("MDK_ACCESS_TOKEN environment variable is required");
         std::process::exit(1);
@@ -242,6 +239,8 @@ fn main() {
 
     info!("NODE_ID: {}", node.node_id());
 
+    let bind_addr = config_file.rest_service_addr;
+
     runtime.block_on(async {
         let mut sighup_stream = match tokio::signal::unix::signal(SignalKind::hangup()) {
             Ok(stream) => stream,
@@ -269,23 +268,20 @@ fn main() {
         };
 
         let app = api::router(app_state);
-        let listener = match tokio::net::TcpListener::bind(mdk_config.api_address).await {
+        let listener = match tokio::net::TcpListener::bind(bind_addr).await {
             Ok(l) => l,
             Err(e) => {
-                error!(
-                    "Failed to bind API listener on {}: {e}",
-                    mdk_config.api_address
-                );
+                error!("Failed to bind API listener on {bind_addr}: {e}");
                 std::process::exit(1);
             }
         };
 
-        info!("MDK API listening on {}", mdk_config.api_address);
+        info!("MDK API listening on {bind_addr}");
 
         let event_node = Arc::clone(&node);
         let event_store = Arc::clone(&paginated_store);
         let event_metadata = Arc::clone(&metadata_store);
-        let event_secret = mdk_config.webhook_secret.clone();
+        let event_secret = webhook_secret;
         let event_client = http_client.clone();
         let event_mdk_client = mdk_client.clone();
 
@@ -327,20 +323,3 @@ fn main() {
     info!("Shutdown complete.");
 }
 
-fn load_or_generate_api_key(storage_dir: &Path) -> std::io::Result<String> {
-    let api_key_path = storage_dir.join(API_KEY_FILE);
-
-    if api_key_path.exists() {
-        let key_bytes = fs::read(&api_key_path)?;
-        Ok(key_bytes.to_lower_hex_string())
-    } else {
-        fs::create_dir_all(storage_dir)?;
-        let mut key_bytes = [0u8; 32];
-        getrandom::getrandom(&mut key_bytes).map_err(std::io::Error::other)?;
-        fs::write(&api_key_path, key_bytes)?;
-        let permissions = fs::Permissions::from_mode(0o400);
-        fs::set_permissions(&api_key_path, permissions)?;
-        debug!("Generated new API key at {}", api_key_path.display());
-        Ok(key_bytes.to_lower_hex_string())
-    }
-}

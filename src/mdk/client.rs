@@ -10,12 +10,6 @@ pub struct MdkApiClient {
     access_token: String,
 }
 
-/// Default API base URL for mainnet.
-pub const DEFAULT_BASE_URL_MAINNET: &str = "https://moneydevkit.com/rpc";
-
-/// Default API base URL for signet/regtest.
-pub const DEFAULT_BASE_URL_STAGING: &str = "https://staging.moneydevkit.com/rpc";
-
 /// oRPC request envelope: `{ "json": <input>, "meta": [...] }`
 ///
 /// The `meta` array tells the oRPC server which fields need special
