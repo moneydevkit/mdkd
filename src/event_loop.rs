@@ -16,7 +16,7 @@ use prost::Message;
 use crate::mdk::client::MdkApiClient;
 use crate::mdk::types::{PaymentEntry, PaymentReceivedRequest};
 use crate::store::invoice_metadata::InvoiceMetadataStore;
-use crate::types::WebhookPayload;
+use crate::types::WebhookEvent;
 use crate::webhook::dispatcher::spawn_webhook_delivery;
 
 pub async fn run_event_loop(
@@ -72,8 +72,7 @@ pub async fn run_event_loop(
                 match metadata_store.get_by_payment_hash(&hash_str) {
                     Ok(Some(metadata)) => {
                         if let Some(webhook_url) = metadata.webhook_url {
-                            let payload = WebhookPayload {
-                                event: "payment_received".into(),
+                            let event = WebhookEvent::PaymentReceived {
                                 payment_hash: hash_str.clone(),
                                 amount_msat,
                                 external_id: metadata.external_id.clone(),
@@ -83,7 +82,7 @@ pub async fn run_event_loop(
                                 http_client.clone(),
                                 webhook_url,
                                 webhook_secret.clone(),
-                                payload,
+                                event,
                             );
                         }
 

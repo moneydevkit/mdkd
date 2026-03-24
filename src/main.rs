@@ -1,6 +1,7 @@
 mod api;
 mod config;
 mod event_loop;
+mod expiry;
 mod mdk;
 mod store;
 mod types;
@@ -277,6 +278,14 @@ fn main() {
         };
 
         info!("MDK API listening on {bind_addr}");
+
+        let expiry_metadata = Arc::clone(&metadata_store);
+        let expiry_secret = webhook_secret.clone();
+        let expiry_client = http_client.clone();
+
+        tokio::spawn(async move {
+            expiry::run_expiry_monitor(expiry_metadata, expiry_secret, expiry_client).await;
+        });
 
         let event_node = Arc::clone(&node);
         let event_store = Arc::clone(&paginated_store);

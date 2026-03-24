@@ -41,6 +41,7 @@ pub async fn handle_create_invoice(
         webhook_url: req.webhook_url,
         checkout_id: checkout_id.clone(),
         created_at: InvoiceMetadataStore::now(),
+        expires_at: expires_at as i64,
     };
 
     metadata_store
@@ -165,15 +166,20 @@ pub async fn handle_get_invoice(
         .map_err(|_| AppError::BadRequest("Invalid payment hash hex".into()))?;
     let payment_id = PaymentId(hash_bytes);
 
+    let now = InvoiceMetadataStore::now();
+    let is_expired = metadata.expires_at > 0 && metadata.expires_at <= now;
+
     let (amount_msat, status) = match node.payment(&payment_id) {
         Some(details) => {
             let status_str = match details.status {
+                PaymentStatus::Pending if is_expired => "expired",
                 PaymentStatus::Pending => "pending",
                 PaymentStatus::Succeeded => "received",
                 PaymentStatus::Failed => "failed",
             };
             (details.amount_msat, status_str.to_string())
         }
+        None if is_expired => (None, "expired".to_string()),
         None => (None, "pending".to_string()),
     };
 

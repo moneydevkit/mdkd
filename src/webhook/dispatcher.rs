@@ -5,7 +5,7 @@ use hmac::{Hmac, Mac};
 use log::{error, info};
 use sha2::Sha256;
 
-use crate::types::WebhookPayload;
+use crate::types::WebhookEvent;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -19,10 +19,10 @@ pub fn spawn_webhook_delivery(
     client: reqwest::Client,
     url: String,
     secret: Vec<u8>,
-    payload: WebhookPayload,
+    event: WebhookEvent,
 ) {
     tokio::spawn(async move {
-        if let Err(e) = deliver(&client, &url, &secret, &payload).await {
+        if let Err(e) = deliver(&client, &url, &secret, &event).await {
             error!(
                 "Webhook delivery to {} failed after all retries: {}",
                 url, e
@@ -35,11 +35,11 @@ async fn deliver(
     client: &reqwest::Client,
     url: &str,
     secret: &[u8],
-    payload: &WebhookPayload,
+    event: &WebhookEvent,
 ) -> Result<(), String> {
-    let body = serde_json::to_vec(payload).map_err(|e| format!("serialize: {}", e))?;
+    let body = serde_json::to_vec(event).map_err(|e| format!("serialize: {}", e))?;
 
-    let timestamp = payload.timestamp;
+    let timestamp = event.timestamp();
     let signature = compute_hmac(secret, &body);
 
     for (attempt, delay) in RETRY_DELAYS.iter().enumerate() {

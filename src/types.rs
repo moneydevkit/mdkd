@@ -63,13 +63,30 @@ pub struct ChannelInfo {
 }
 
 #[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WebhookPayload {
-    pub event: String,
-    pub payment_hash: String,
-    pub amount_msat: u64,
-    pub external_id: Option<String>,
-    pub timestamp: i64,
+#[serde(tag = "event")]
+pub enum WebhookEvent {
+    #[serde(rename = "payment_received", rename_all = "camelCase")]
+    PaymentReceived {
+        payment_hash: String,
+        amount_msat: u64,
+        external_id: Option<String>,
+        timestamp: i64,
+    },
+    #[serde(rename = "invoice_expired", rename_all = "camelCase")]
+    InvoiceExpired {
+        payment_hash: String,
+        external_id: Option<String>,
+        timestamp: i64,
+    },
+}
+
+impl WebhookEvent {
+    pub fn timestamp(&self) -> i64 {
+        match self {
+            WebhookEvent::PaymentReceived { timestamp, .. } => *timestamp,
+            WebhookEvent::InvoiceExpired { timestamp, .. } => *timestamp,
+        }
+    }
 }
 
 #[derive(Serialize)]
