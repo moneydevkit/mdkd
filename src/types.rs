@@ -1,6 +1,43 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
+pub struct DecodeInvoiceRequest {
+    pub invoice: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecodeInvoiceResponse {
+    pub amount: Option<u64>,
+    pub amount_msat: Option<u64>,
+    pub payment_hash: String,
+    pub payment_secret: String,
+    pub description: Option<String>,
+    pub payment_metadata: Option<String>,
+    pub expiry_seconds: u64,
+    pub created_at_seconds: u64,
+    pub node_id: String,
+    pub routing_hints: Vec<RoutingHint>,
+    pub features: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoutingHint {
+    pub hops: Vec<RoutingHintHop>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoutingHintHop {
+    pub node_id: String,
+    pub short_channel_id: String,
+    pub fee_base_msat: u32,
+    pub fee_proportional_millionths: u32,
+    pub cltv_expiry_delta: u16,
+}
+
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateInvoiceRequest {
     pub amount_msat: Option<u64>,

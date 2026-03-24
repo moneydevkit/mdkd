@@ -4,6 +4,7 @@ use axum::Json;
 
 use crate::types::ApiError;
 
+#[derive(Debug)]
 pub enum AppError {
     BadRequest(String),
     NotFound(String),

@@ -218,6 +218,16 @@ rpc_password = "{rpc_password}"
             .unwrap()
     }
 
+    pub async fn post_form(&self, path: &str, params: &[(&str, &str)]) -> reqwest::Response {
+        self.client
+            .post(format!("{}{}", self.base_url(), path))
+            .basic_auth("", Some(&self.http_password_full))
+            .form(params)
+            .send()
+            .await
+            .unwrap()
+    }
+
     async fn wait_for_ready(&self, timeout: Duration) -> serde_json::Value {
         let start = std::time::Instant::now();
         loop {

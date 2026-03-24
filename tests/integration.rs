@@ -7,6 +7,8 @@ use common::{
     WebhookReceiver,
 };
 
+use serde_json::json;
+
 const TEST_MNEMONIC: &str =
     "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
@@ -390,4 +392,75 @@ async fn test_jit_channel_invoice() {
         }
         tokio::time::sleep(Duration::from_secs(2)).await;
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_decodeinvoice() {
+    let bitcoind = TestBitcoind::new();
+    let lsp = LspNode::new(&bitcoind);
+    fund_lsp(&bitcoind, &lsp).await;
+
+    let server = MdkServerHandle::start(&bitcoind, None, Some(&lsp), TEST_MNEMONIC).await;
+
+    // Create an invoice to decode.
+    let create_body = json!({
+        "amountMsat": 100_000_000,
+        "description": "decode test",
+        "expirySecs": 3600,
+        "externalId": "decode-1"
+    });
+    let created: serde_json::Value = server
+        .post("/v1/invoices", &create_body)
+        .await
+        .json()
+        .await
+        .unwrap();
+    let invoice_str = created["invoice"].as_str().unwrap();
+    let expected_hash = created["paymentHash"].as_str().unwrap();
+
+    // Decode it.
+    let resp = server
+        .post_form("/decodeinvoice", &[("invoice", invoice_str)])
+        .await;
+    assert_eq!(resp.status(), 200);
+
+    let decoded: serde_json::Value = resp.json().await.unwrap();
+
+    assert_eq!(decoded["paymentHash"].as_str().unwrap(), expected_hash);
+    assert_eq!(decoded["amountMsat"].as_u64().unwrap(), 100_000_000);
+    assert_eq!(decoded["amount"].as_u64().unwrap(), 100_000);
+    assert_eq!(decoded["description"].as_str().unwrap(), "decode test");
+    assert_eq!(decoded["expirySeconds"].as_u64().unwrap(), 3600);
+    assert!(decoded["createdAtSeconds"].as_u64().unwrap() > 0);
+    assert!(!decoded["nodeId"].as_str().unwrap().is_empty());
+    assert!(!decoded["paymentSecret"].as_str().unwrap().is_empty());
+    assert!(decoded["routingHints"].as_array().is_some());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_decodeinvoice_invalid() {
+    let bitcoind = TestBitcoind::new();
+    let server = MdkServerHandle::start(&bitcoind, None, None, TEST_MNEMONIC).await;
+
+    let resp = server
+        .post_form("/decodeinvoice", &[("invoice", "not-a-real-invoice")])
+        .await;
+    assert_eq!(resp.status(), 400);
+
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["code"].as_str().unwrap(), "bad_request");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_decodeinvoice_missing_param() {
+    let bitcoind = TestBitcoind::new();
+    let server = MdkServerHandle::start(&bitcoind, None, None, TEST_MNEMONIC).await;
+
+    // POST with empty form body — axum returns 422 for missing fields.
+    let resp = server.post_form("/decodeinvoice", &[]).await;
+    assert!(
+        resp.status() == 400 || resp.status() == 422,
+        "Expected 4xx error, got {}",
+        resp.status()
+    );
 }

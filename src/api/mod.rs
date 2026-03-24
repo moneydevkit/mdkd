@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod balance;
+pub mod decode;
 pub mod error;
 pub mod invoices;
 pub mod node;
@@ -29,7 +30,8 @@ pub fn router(state: AppState) -> Router {
     let read_only_routes = Router::new()
         .route("/v1/node", get(get_node))
         .route("/v1/invoices/{payment_hash}", get(get_invoice))
-        .route("/getbalance", get(get_balance));
+        .route("/getbalance", get(get_balance))
+        .route("/decodeinvoice", post(decode_invoice));
 
     let full_routes = Router::new()
         .route("/v1/invoices", post(create_invoice))
@@ -68,4 +70,10 @@ async fn get_balance(
     State(state): State<AppState>,
 ) -> Result<axum::Json<crate::types::GetBalanceResponse>, error::AppError> {
     balance::handle_get_balance(state.node).await
+}
+
+async fn decode_invoice(
+    axum::Form(req): axum::Form<crate::types::DecodeInvoiceRequest>,
+) -> Result<axum::Json<crate::types::DecodeInvoiceResponse>, error::AppError> {
+    decode::handle_decode_invoice(req)
 }
