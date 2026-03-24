@@ -248,6 +248,68 @@ async fn test_webhook_delivery() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn test_getbalance_empty() {
+    let bitcoind = TestBitcoind::new();
+    let server = MdkServerHandle::start(&bitcoind, None, None, TEST_MNEMONIC).await;
+
+    let resp: serde_json::Value = server.get("/getbalance").await.json().await.unwrap();
+    assert_eq!(resp["balanceSat"].as_u64().unwrap(), 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_getbalance_after_payment() {
+    let bitcoind = TestBitcoind::new();
+    let lsp = LspNode::new(&bitcoind);
+    fund_lsp(&bitcoind, &lsp).await;
+
+    let server = MdkServerHandle::start(&bitcoind, None, Some(&lsp), TEST_MNEMONIC).await;
+    let payer = PayerNode::new(&bitcoind);
+    setup_payer_lsp_channel(&bitcoind, &payer, &lsp, 500_000).await;
+
+    // Pay into the server node.
+    let body = serde_json::json!({
+        "amountMsat": 100_000_000,
+        "description": "balance test",
+        "expirySecs": 3600,
+        "externalId": "bal-1"
+    });
+    let invoice: serde_json::Value = server
+        .post("/v1/invoices", &body)
+        .await
+        .json()
+        .await
+        .unwrap();
+    let invoice_str = invoice["invoice"].as_str().unwrap();
+    let payment_hash = invoice["paymentHash"].as_str().unwrap().to_string();
+
+    payer.pay_invoice(invoice_str);
+
+    // Wait for payment to settle (zero-conf JIT channel, no mining needed).
+    let start = std::time::Instant::now();
+    loop {
+        let resp: serde_json::Value = server
+            .get(&format!("/v1/invoices/{payment_hash}"))
+            .await
+            .json()
+            .await
+            .unwrap();
+        if resp["status"].as_str().unwrap() == "received" {
+            break;
+        }
+        if start.elapsed() > Duration::from_secs(60) {
+            panic!("Timed out waiting for payment to settle");
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+
+    let resp: serde_json::Value = server.get("/getbalance").await.json().await.unwrap();
+    assert!(
+        resp["balanceSat"].as_u64().unwrap() == 98_000, // 2% LSP fee
+        "Expected non-zero balance after receiving payment, got: {resp}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn test_jit_channel_invoice() {
     let bitcoind = TestBitcoind::new();
     let lsp = LspNode::new(&bitcoind);

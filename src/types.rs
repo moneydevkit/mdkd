@@ -44,6 +44,12 @@ pub struct GetInvoiceResponse {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct GetBalanceResponse {
+    pub balance_sat: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NodeInfoResponse {
     pub node_id: String,
     pub network: String,
