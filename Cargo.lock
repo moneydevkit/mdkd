@@ -1729,11 +1729,13 @@ name = "mdk-server"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "clap",
  "corepc-node",
  "getrandom 0.2.17",
  "hex-conservative",
  "hmac",
+ "http-body-util",
  "ldk-node 0.7.0 (git+https://github.com/moneydevkit/ldk-node?rev=e5fcce065fa97c522de0f8fec87beb9e7e541456)",
  "ldk-server",
  "ldk-server-protos",
@@ -1747,6 +1749,7 @@ dependencies = [
  "tempfile",
  "time",
  "tokio",
+ "tower",
 ]
 
 [[package]]

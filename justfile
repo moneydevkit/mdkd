@@ -76,7 +76,8 @@ dev: dev-config
     set -euo pipefail
     set -a; source .env; set +a
     : "${MDK_ACCESS_TOKEN:?set MDK_ACCESS_TOKEN in .env}"
-    : "${MDK_SERVER_SECRET:?set MDK_SERVER_SECRET in .env}"
+    : "${MDK_HTTP_PASSWORD_FULL:?set MDK_HTTP_PASSWORD_FULL in .env}"
+    : "${MDK_HTTP_PASSWORD_READ_ONLY:?set MDK_HTTP_PASSWORD_READ_ONLY in .env}"
     export MDK_MNEMONIC="abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
     cargo run -- config.toml
 
@@ -86,11 +87,14 @@ dev-staging: dev-staging-config
     set -euo pipefail
     set -a; source .env; set +a
     : "${MDK_ACCESS_TOKEN:?set MDK_ACCESS_TOKEN in .env}"
-    : "${MDK_SERVER_SECRET:?set MDK_SERVER_SECRET in .env}"
+    : "${MDK_HTTP_PASSWORD_FULL:?set MDK_HTTP_PASSWORD_FULL in .env}"
+    : "${MDK_HTTP_PASSWORD_READ_ONLY:?set MDK_HTTP_PASSWORD_READ_ONLY in .env}"
+    : "${MDK_WEBHOOK_SECRET:?set MDK_WEBHOOK_SECRET in .env}"
     : "${MDK_MNEMONIC:?set MDK_MNEMONIC in .env}"
+    export MDK_API_BASE_URL="${MDK_API_BASE_URL:-https://staging.moneydevkit.com/rpc}"
     cargo run -- config.toml
 
-# Generate config.toml for staging (esplora, no local bitcoind needed)
+# Generate config.toml + .env for staging (esplora, no local bitcoind needed)
 dev-staging-config:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -112,6 +116,19 @@ dev-staging-config:
     TOML
     echo "config.toml written (staging/signet)"
     echo "  esplora     $ESPLORA_URL"
+    # Write .env only if it doesn't already exist (user manages staging credentials)
+    if [ ! -f .env ]; then
+      cat > .env << 'ENV'
+    # Fill these in for staging:
+    # MDK_ACCESS_TOKEN=
+    # MDK_MNEMONIC=
+    MDK_API_BASE_URL=https://staging.moneydevkit.com/rpc
+    MDK_WEBHOOK_SECRET=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    MDK_HTTP_PASSWORD_FULL=staging_full_password
+    MDK_HTTP_PASSWORD_READ_ONLY=staging_readonly_password
+    ENV
+      echo ".env template written (fill in MDK_ACCESS_TOKEN and MDK_MNEMONIC)"
+    fi
 
 # Wipe mdk-server local state (seed, db, api key)
 dev-clean:
@@ -120,23 +137,23 @@ dev-clean:
     @echo "Cleaned {{dev_storage}} and config.toml"
 
 [private]
-api-key:
+http-password:
     #!/usr/bin/env bash
     set -euo pipefail
     set -a; source .env; set +a
-    echo "$MDK_SERVER_SECRET"
+    echo "$MDK_HTTP_PASSWORD_FULL"
 
-# Print the server secret for the running mdk-server
-dev-api-key:
-    @just api-key
+# Print the full-access password for the running mdk-server
+dev-password:
+    @just http-password
 
 # Create a test invoice (amount in msats, default 100k = 100 sats)
 dev-invoice amount_msat="100000":
     #!/usr/bin/env bash
     set -euo pipefail
-    api_key=$(just api-key)
+    pw=$(just http-password)
     resp=$(curl -sS -w '\n%{http_code}' http://127.0.0.1:8081/v1/invoices \
-      -H "Authorization: Bearer $api_key" \
+      -u ":$pw" \
       -H "Content-Type: application/json" \
       -d "{\"amountMsat\": {{amount_msat}}, \"description\": \"test\", \"expirySecs\": 3600}")
     code=$(echo "$resp" | tail -1)
@@ -159,18 +176,18 @@ dev-pay invoice:
 dev-status payment_hash:
     #!/usr/bin/env bash
     set -euo pipefail
-    api_key=$(just api-key)
+    pw=$(just http-password)
     curl -s "http://127.0.0.1:8081/v1/invoices/{{payment_hash}}" \
-      -H "Authorization: Bearer $api_key" \
+      -u ":$pw" \
     | jq .
 
 # Show node info for the running mdk-server
 dev-node-info:
     #!/usr/bin/env bash
     set -euo pipefail
-    api_key=$(just api-key)
+    pw=$(just http-password)
     curl -s http://127.0.0.1:8081/v1/node \
-      -H "Authorization: Bearer $api_key" \
+      -u ":$pw" \
     | jq .
 
 # End-to-end test against the local lightning-node + moneydevkit stack
@@ -224,11 +241,12 @@ e2e: dev-clean
     export MDK_ACCESS_TOKEN="$mdk_token"
     export MDK_API_BASE_URL="$mdk_rpc"
     export MDK_WEBHOOK_SECRET="${MDK_WEBHOOK_SECRET:-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}"
-    export MDK_SERVER_SECRET="${MDK_SERVER_SECRET:-e2e_test_secret}"
+    export MDK_HTTP_PASSWORD_FULL="${MDK_HTTP_PASSWORD_FULL:-e2e_full_password}"
+    export MDK_HTTP_PASSWORD_READ_ONLY="${MDK_HTTP_PASSWORD_READ_ONLY:-e2e_readonly_password}"
     just dev-config
     # Source .env written by dev-config (picks up MDK_LSP_NODE_ID etc.)
     set -a; source .env; set +a
-    api_key="$MDK_SERVER_SECRET"
+    http_pw="$MDK_HTTP_PASSWORD_FULL"
 
     # ---------------------------------------------------------------
     # Helpers
@@ -239,7 +257,7 @@ e2e: dev-clean
       echo ""
       echo "==> [$label] Creating invoice for $amount msat..."
       resp=$(curl -sS http://127.0.0.1:8081/v1/invoices \
-        -H "Authorization: Bearer $api_key" \
+        -u ":$http_pw" \
         -H "Content-Type: application/json" \
         -d "{\"amountMsat\": $amount, \"description\": \"$label\", \"expirySecs\": 3600}")
       echo "$resp" | jq .
@@ -262,11 +280,11 @@ e2e: dev-clean
       echo -n "==> [$label] Waiting for settlement"
       for i in {1..30}; do
         status=$(curl -sS "http://127.0.0.1:8081/v1/invoices/$payment_hash" \
-          -H "Authorization: Bearer $api_key" | jq -r '.status')
+          -u ":$http_pw" | jq -r '.status')
         if [ "$status" = "received" ]; then
           echo " done!"
           curl -sS "http://127.0.0.1:8081/v1/invoices/$payment_hash" \
-            -H "Authorization: Bearer $api_key" | jq .
+            -u ":$http_pw" | jq .
           return 0
         fi
         echo -n "."
@@ -274,7 +292,7 @@ e2e: dev-clean
       done
       echo " timeout!"
       curl -sS "http://127.0.0.1:8081/v1/invoices/$payment_hash" \
-        -H "Authorization: Bearer $api_key" | jq .
+        -u ":$http_pw" | jq .
       return 1
     }
 
@@ -304,7 +322,7 @@ e2e: dev-clean
     echo ""
     echo "==> Channel info:"
     curl -sS http://127.0.0.1:8081/v1/node \
-      -H "Authorization: Bearer $api_key" | jq '.channels'
+      -u ":$http_pw" | jq '.channels'
 
     # ---------------------------------------------------------------
     # Verify checkouts on moneydevkit.com
@@ -387,7 +405,8 @@ dev-config:
     MDK_LSP_ADDRESS=127.0.0.1:${n1_p2p}
     MDK_API_BASE_URL=${MDK_API_BASE_URL:-http://localhost:3900/rpc}
     MDK_WEBHOOK_SECRET=${MDK_WEBHOOK_SECRET:-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
-    MDK_SERVER_SECRET=${MDK_SERVER_SECRET:-dev_secret}
+    MDK_HTTP_PASSWORD_FULL=${MDK_HTTP_PASSWORD_FULL:-dev_full_password}
+    MDK_HTTP_PASSWORD_READ_ONLY=${MDK_HTTP_PASSWORD_READ_ONLY:-dev_readonly_password}
     ENV
     echo "config.toml written"
     echo "  bitcoind    127.0.0.1:${btc_port}"

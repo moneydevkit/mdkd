@@ -93,10 +93,10 @@ async fn test_auth_required() {
         .unwrap();
     assert_eq!(resp.status(), 401);
 
-    // Request with wrong key.
+    // Request with wrong password.
     let resp = reqwest::Client::new()
         .get(format!("{}/v1/node", server.base_url()))
-        .header("Authorization", "Bearer deadbeef")
+        .basic_auth("", Some("deadbeef"))
         .send()
         .await
         .unwrap();

@@ -25,7 +25,7 @@ use ldk_server::util::logger::ServerLogger;
 use log::{error, info};
 use tokio::signal::unix::SignalKind;
 
-use crate::api::AppState;
+use crate::api::{AppState, HttpAuth};
 use crate::config::NetworkInfra;
 use crate::mdk::client::MdkApiClient;
 use crate::store::invoice_metadata::InvoiceMetadataStore;
@@ -61,16 +61,18 @@ fn main() {
         }
     };
 
+    // Validate all required env vars up front, before logger init.
     let webhook_secret = {
-        let hex_str = std::env::var("MDK_WEBHOOK_SECRET").unwrap_or_else(|_| {
-            error!("MDK_WEBHOOK_SECRET environment variable is required");
-            std::process::exit(1);
-        });
+        let hex_str = require_env("MDK_WEBHOOK_SECRET");
         Vec::<u8>::from_hex(&hex_str).unwrap_or_else(|e| {
-            error!("Invalid MDK_WEBHOOK_SECRET hex: {e}");
+            eprintln!("Invalid MDK_WEBHOOK_SECRET hex: {e}");
             std::process::exit(1);
         })
     };
+    let full_password = require_env("MDK_HTTP_PASSWORD_FULL");
+    let read_only_password = require_env("MDK_HTTP_PASSWORD_READ_ONLY");
+    let mnemonic_phrase = require_env("MDK_MNEMONIC");
+    let mdk_access_token = require_env("MDK_ACCESS_TOKEN");
 
     let storage_dir: PathBuf = match config_file.storage_dir_path {
         None => match get_default_data_dir() {
@@ -103,11 +105,6 @@ fn main() {
             std::process::exit(1);
         }
     };
-
-    let api_key = std::env::var("MDK_SERVER_SECRET").unwrap_or_else(|_| {
-        error!("MDK_SERVER_SECRET environment variable is required");
-        std::process::exit(1);
-    });
 
     let ldk_node_config = LdkNodeConfig {
         storage_dir_path: network_dir.to_str().unwrap().to_string(),
@@ -172,10 +169,6 @@ fn main() {
 
     builder.set_runtime(runtime.handle().clone());
 
-    let mnemonic_phrase = std::env::var("MDK_MNEMONIC").unwrap_or_else(|_| {
-        error!("MDK_MNEMONIC environment variable is required");
-        std::process::exit(1);
-    });
     let mnemonic = Mnemonic::parse(&mnemonic_phrase).unwrap_or_else(|e| {
         error!("Invalid MDK_MNEMONIC: {e}");
         std::process::exit(1);
@@ -211,10 +204,6 @@ fn main() {
     };
 
     let base_url = infra.mdk_api_base_url().to_string();
-    let mdk_access_token = std::env::var("MDK_ACCESS_TOKEN").unwrap_or_else(|_| {
-        error!("MDK_ACCESS_TOKEN environment variable is required");
-        std::process::exit(1);
-    });
     info!("MDK platform integration enabled ({})", base_url);
     let mdk_client = Arc::new(MdkApiClient::new(base_url, mdk_access_token));
 
@@ -264,7 +253,10 @@ fn main() {
         let app_state = AppState {
             node: Arc::clone(&node),
             metadata_store: Arc::clone(&metadata_store),
-            api_key: api_key.clone(),
+            http_auth: HttpAuth {
+                full_password: full_password.clone(),
+                read_only_password: read_only_password.clone(),
+            },
             mdk_client: mdk_client.clone(),
         };
 
@@ -332,3 +324,9 @@ fn main() {
     info!("Shutdown complete.");
 }
 
+fn require_env(name: &str) -> String {
+    std::env::var(name).unwrap_or_else(|_| {
+        eprintln!("{name} environment variable is required");
+        std::process::exit(1);
+    })
+}

@@ -82,7 +82,7 @@ pub struct MdkServerHandle {
     pub api_port: u16,
     pub p2p_port: u16,
     pub storage_dir: PathBuf,
-    pub api_key: String,
+    pub http_password_full: String,
     pub node_id: String,
     client: reqwest::Client,
     _mock_mdk: MockMdkApi,
@@ -117,7 +117,8 @@ impl MdkServerHandle {
         let mock_mdk = MockMdkApi::start().await;
         let mdk_api_base_url = mock_mdk.base_url();
         let mdk_access_token = "test_token_dummy";
-        let api_key = "test_api_key";
+        let http_password_full = "test_full_password";
+        let http_password_read_only = "test_readonly_password";
 
         let config = format!(
             r#"[node]
@@ -144,7 +145,8 @@ rpc_password = "{rpc_password}"
             .arg(config_path.to_str().unwrap())
             .env("MDK_MNEMONIC", mnemonic)
             .env("MDK_ACCESS_TOKEN", mdk_access_token)
-            .env("MDK_SERVER_SECRET", api_key)
+            .env("MDK_HTTP_PASSWORD_FULL", http_password_full)
+            .env("MDK_HTTP_PASSWORD_READ_ONLY", http_password_read_only)
             .env("MDK_LSP_NODE_ID", &lsp_node_id)
             .env("MDK_LSP_ADDRESS", &lsp_address)
             .env("MDK_API_BASE_URL", &mdk_api_base_url)
@@ -179,7 +181,7 @@ rpc_password = "{rpc_password}"
             api_port,
             p2p_port,
             storage_dir,
-            api_key: api_key.to_string(),
+            http_password_full: http_password_full.to_string(),
             node_id: String::new(),
             client,
             _mock_mdk: mock_mdk,
@@ -200,7 +202,7 @@ rpc_password = "{rpc_password}"
     pub async fn get(&self, path: &str) -> reqwest::Response {
         self.client
             .get(format!("{}{}", self.base_url(), path))
-            .header("Authorization", format!("Bearer {}", self.api_key))
+            .basic_auth("", Some(&self.http_password_full))
             .send()
             .await
             .unwrap()
@@ -209,7 +211,7 @@ rpc_password = "{rpc_password}"
     pub async fn post(&self, path: &str, body: &serde_json::Value) -> reqwest::Response {
         self.client
             .post(format!("{}{}", self.base_url(), path))
-            .header("Authorization", format!("Bearer {}", self.api_key))
+            .basic_auth("", Some(&self.http_password_full))
             .json(body)
             .send()
             .await
@@ -222,7 +224,7 @@ rpc_password = "{rpc_password}"
             let result = self
                 .client
                 .get(format!("{}/v1/node", self.base_url()))
-                .header("Authorization", format!("Bearer {}", self.api_key))
+                .basic_auth("", Some(&self.http_password_full))
                 .send()
                 .await;
 

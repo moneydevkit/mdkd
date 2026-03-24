@@ -1,16 +1,17 @@
+pub mod auth;
 pub mod error;
 pub mod invoices;
 pub mod node;
 
 use std::sync::Arc;
 
-use axum::extract::{Request, State};
-use axum::http::StatusCode;
-use axum::middleware::{self, Next};
-use axum::response::Response;
+use axum::extract::State;
+use axum::middleware;
 use axum::routing::{get, post};
 use axum::Router;
 use ldk_server::ldk_node::Node;
+
+pub use auth::HttpAuth;
 
 use crate::mdk::client::MdkApiClient;
 use crate::store::invoice_metadata::InvoiceMetadataStore;
@@ -19,39 +20,26 @@ use crate::store::invoice_metadata::InvoiceMetadataStore;
 pub struct AppState {
     pub node: Arc<Node>,
     pub metadata_store: Arc<InvoiceMetadataStore>,
-    pub api_key: String,
+    pub http_auth: HttpAuth,
     pub mdk_client: Arc<MdkApiClient>,
 }
 
 pub fn router(state: AppState) -> Router {
-    Router::new()
-        .route("/v1/invoices", post(create_invoice))
-        .route("/v1/invoices/{payment_hash}", get(get_invoice))
+    let read_only_routes = Router::new()
         .route("/v1/node", get(get_node))
+        .route("/v1/invoices/{payment_hash}", get(get_invoice));
+
+    let full_routes = Router::new()
+        .route("/v1/invoices", post(create_invoice))
+        .layer(middleware::from_fn(auth::require_full_access));
+
+    read_only_routes
+        .merge(full_routes)
         .layer(middleware::from_fn_with_state(
-            state.clone(),
-            auth_middleware,
+            state.http_auth.clone(),
+            auth::auth_middleware,
         ))
         .with_state(state)
-}
-
-async fn auth_middleware(
-    State(state): State<AppState>,
-    req: Request,
-    next: Next,
-) -> Result<Response, StatusCode> {
-    let auth_header = req
-        .headers()
-        .get("Authorization")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-
-    let token = auth_header.strip_prefix("Bearer ").unwrap_or("");
-    if token != state.api_key {
-        return Err(StatusCode::UNAUTHORIZED);
-    }
-
-    Ok(next.run(req).await)
 }
 
 async fn create_invoice(
