@@ -464,3 +464,47 @@ async fn test_decodeinvoice_missing_param() {
         resp.status()
     );
 }
+
+// Spec test vector: offer with description + issuer + nodeId.
+const BOLT12_OFFER: &str =
+    "lno1pgx9getnwss8vetrw3hhyucjy358garswvaz7tmzdak8gvfj9ehhyeeqgf85c4p3xgsxjmnyw4ehgunfv4e3vggzamrjghtt05kvkvpcp0a79gmy3nt6jsn98ad2xs8de6sl9qmgvcvs";
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_decodeoffer() {
+    let bitcoind = TestBitcoind::new();
+    let server = MdkServerHandle::start(&bitcoind, None, None, TEST_MNEMONIC).await;
+
+    let resp = server
+        .post_form("/decodeoffer", &[("offer", BOLT12_OFFER)])
+        .await;
+    assert_eq!(resp.status(), 200);
+
+    let decoded: serde_json::Value = resp.json().await.unwrap();
+
+    assert_eq!(decoded["offerId"].as_str().unwrap().len(), 64);
+    assert_eq!(
+        decoded["description"].as_str().unwrap(),
+        "Test vectors"
+    );
+    assert_eq!(
+        decoded["issuer"].as_str().unwrap(),
+        "https://bolt12.org BOLT12 industries"
+    );
+    assert!(decoded["nodeId"].as_str().is_some());
+    assert!(decoded["amount"].is_null());
+    assert!(decoded["amountMsat"].is_null());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_decodeoffer_invalid() {
+    let bitcoind = TestBitcoind::new();
+    let server = MdkServerHandle::start(&bitcoind, None, None, TEST_MNEMONIC).await;
+
+    let resp = server
+        .post_form("/decodeoffer", &[("offer", "not-a-real-offer")])
+        .await;
+    assert_eq!(resp.status(), 400);
+
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["code"].as_str().unwrap(), "bad_request");
+}

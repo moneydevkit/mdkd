@@ -38,6 +38,23 @@ pub struct RoutingHintHop {
 }
 
 #[derive(Deserialize)]
+pub struct DecodeOfferRequest {
+    pub offer: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecodeOfferResponse {
+    pub offer_id: String,
+    pub amount: Option<u64>,
+    pub amount_msat: Option<u64>,
+    pub description: Option<String>,
+    pub issuer: Option<String>,
+    pub node_id: Option<String>,
+    pub features: Vec<String>,
+}
+
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateInvoiceRequest {
     pub amount_msat: Option<u64>,

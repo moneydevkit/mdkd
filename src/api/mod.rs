@@ -31,7 +31,8 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/node", get(get_node))
         .route("/v1/invoices/{payment_hash}", get(get_invoice))
         .route("/getbalance", get(get_balance))
-        .route("/decodeinvoice", post(decode_invoice));
+        .route("/decodeinvoice", post(decode_invoice))
+        .route("/decodeoffer", post(decode_offer));
 
     let full_routes = Router::new()
         .route("/v1/invoices", post(create_invoice))
@@ -75,5 +76,11 @@ async fn get_balance(
 async fn decode_invoice(
     axum::Form(req): axum::Form<crate::types::DecodeInvoiceRequest>,
 ) -> Result<axum::Json<crate::types::DecodeInvoiceResponse>, error::AppError> {
-    decode::handle_decode_invoice(req)
+    decode::handle_decode_invoice(&req)
+}
+
+async fn decode_offer(
+    axum::Form(req): axum::Form<crate::types::DecodeOfferRequest>,
+) -> Result<axum::Json<crate::types::DecodeOfferResponse>, error::AppError> {
+    decode::handle_decode_offer(&req)
 }
