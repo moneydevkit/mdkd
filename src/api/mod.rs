@@ -28,7 +28,7 @@ pub struct AppState {
 
 pub fn router(state: AppState) -> Router {
     let read_only_routes = Router::new()
-        .route("/v1/node", get(get_node))
+        .route("/getinfo", get(get_info))
         .route("/v1/invoices/{payment_hash}", get(get_invoice))
         .route("/getbalance", get(get_balance))
         .route("/decodeinvoice", post(decode_invoice))
@@ -61,10 +61,10 @@ async fn get_invoice(
     invoices::handle_get_invoice(state.node, state.metadata_store, path).await
 }
 
-async fn get_node(
+async fn get_info(
     State(state): State<AppState>,
-) -> Result<axum::Json<crate::types::NodeInfoResponse>, error::AppError> {
-    node::handle_get_node(state.node).await
+) -> Result<axum::Json<crate::types::GetInfoResponse>, error::AppError> {
+    info::handle_get_info(state.node).await
 }
 
 async fn get_balance(

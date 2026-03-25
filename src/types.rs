@@ -104,22 +104,34 @@ pub struct GetBalanceResponse {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct NodeInfoResponse {
+pub struct GetInfoResponse {
     pub node_id: String,
-    pub network: String,
     pub channels: Vec<ChannelInfo>,
+    pub chain: String,
+    pub block_height: u32,
+    pub version: &'static str,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChannelInfo {
+    pub state: ChannelState,
     pub channel_id: String,
-    pub counterparty_node_id: String,
-    pub channel_value_sats: u64,
-    pub outbound_capacity_msat: u64,
-    pub inbound_capacity_msat: u64,
-    pub is_usable: bool,
-    pub is_channel_ready: bool,
+    pub balance_sat: u64,
+    pub inbound_liquidity_sat: u64,
+    pub capacity_sat: u64,
+    pub funding_tx_id: Option<String>,
+}
+
+/// LDK removes closing/closed channels from `list_channels()`, so those
+/// states never appear here. `Offline` means the channel exists but the
+/// peer is disconnected (not closing).
+#[derive(Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ChannelState {
+    Online,
+    Offline,
+    Opening,
 }
 
 #[derive(Serialize)]

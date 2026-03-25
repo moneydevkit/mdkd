@@ -32,13 +32,15 @@ async fn test_mnemonic_deterministic_node_id() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_node_info() {
+async fn test_get_info() {
     let bitcoind = TestBitcoind::new();
     let server = MdkServerHandle::start(&bitcoind, None, None, TEST_MNEMONIC).await;
 
-    let resp: serde_json::Value = server.get("/v1/node").await.json().await.unwrap();
+    let resp: serde_json::Value = server.get("/getinfo").await.json().await.unwrap();
     assert!(!resp["nodeId"].as_str().unwrap().is_empty());
-    assert_eq!(resp["network"].as_str().unwrap(), "regtest");
+    assert_eq!(resp["chain"].as_str().unwrap(), "regtest");
+    assert!(resp["blockHeight"].as_u64().is_some());
+    assert!(!resp["version"].as_str().unwrap().is_empty());
     assert!(resp["channels"].as_array().unwrap().is_empty());
 }
 
@@ -89,7 +91,7 @@ async fn test_auth_required() {
 
     // Request without auth header.
     let resp = reqwest::Client::new()
-        .get(format!("{}/v1/node", server.base_url()))
+        .get(format!("{}/getinfo", server.base_url()))
         .send()
         .await
         .unwrap();
@@ -97,7 +99,7 @@ async fn test_auth_required() {
 
     // Request with wrong password.
     let resp = reqwest::Client::new()
-        .get(format!("{}/v1/node", server.base_url()))
+        .get(format!("{}/getinfo", server.base_url()))
         .basic_auth("", Some("deadbeef"))
         .send()
         .await

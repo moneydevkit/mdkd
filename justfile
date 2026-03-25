@@ -186,7 +186,7 @@ dev-node-info:
     #!/usr/bin/env bash
     set -euo pipefail
     pw=$(just http-password)
-    curl -s http://127.0.0.1:8081/v1/node \
+    curl -s http://127.0.0.1:8081/getinfo \
       -u ":$pw" \
     | jq .
 
@@ -306,7 +306,7 @@ e2e: dev-clean
 
     echo -n "==> Waiting for API to be ready"
     for i in {1..30}; do
-      if curl -sS -o /dev/null http://127.0.0.1:8081/v1/node 2>/dev/null; then
+      if curl -sS -o /dev/null http://127.0.0.1:8081/getinfo 2>/dev/null; then
         echo " ready!"
         break
       fi
@@ -321,7 +321,7 @@ e2e: dev-clean
 
     echo ""
     echo "==> Channel info:"
-    curl -sS http://127.0.0.1:8081/v1/node \
+    curl -sS http://127.0.0.1:8081/getinfo \
       -u ":$http_pw" | jq '.channels'
 
     # ---------------------------------------------------------------

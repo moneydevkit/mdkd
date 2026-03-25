@@ -233,7 +233,7 @@ rpc_password = "{rpc_password}"
         loop {
             let result = self
                 .client
-                .get(format!("{}/v1/node", self.base_url()))
+                .get(format!("{}/getinfo", self.base_url()))
                 .basic_auth("", Some(&self.http_password_full))
                 .send()
                 .await;
