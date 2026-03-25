@@ -147,15 +147,14 @@ http-password:
 dev-password:
     @just http-password
 
-# Create a test invoice (amount in msats, default 100k = 100 sats)
-dev-invoice amount_msat="100000":
+# Create a test invoice (amount in sats, default 100)
+dev-invoice amount_sat="100":
     #!/usr/bin/env bash
     set -euo pipefail
     pw=$(just http-password)
-    resp=$(curl -sS -w '\n%{http_code}' http://127.0.0.1:8081/v1/invoices \
+    resp=$(curl -sS -w '\n%{http_code}' http://127.0.0.1:8081/createinvoice \
       -u ":$pw" \
-      -H "Content-Type: application/json" \
-      -d "{\"amountMsat\": {{amount_msat}}, \"description\": \"test\", \"expirySecs\": 3600}")
+      -d "amountSat={{amount_sat}}&description=test&expirySeconds=3600")
     code=$(echo "$resp" | tail -1)
     body=$(echo "$resp" | sed '$d')
     if [ "$code" -ge 400 ] 2>/dev/null || [ -z "$body" ]; then
@@ -182,7 +181,7 @@ dev-status payment_hash:
     | jq .
 
 # Show node info for the running mdk-server
-dev-node-info:
+dev-get-info:
     #!/usr/bin/env bash
     set -euo pipefail
     pw=$(just http-password)
@@ -255,22 +254,14 @@ e2e: dev-clean
       local label="$1"
       local amount="$2"
       echo ""
-      echo "==> [$label] Creating invoice for $amount msat..."
-      resp=$(curl -sS http://127.0.0.1:8081/v1/invoices \
+      local amount_sat=$((amount / 1000))
+      echo "==> [$label] Creating invoice for $amount_sat sat..."
+      resp=$(curl -sS http://127.0.0.1:8081/createinvoice \
         -u ":$http_pw" \
-        -H "Content-Type: application/json" \
-        -d "{\"amountMsat\": $amount, \"description\": \"$label\", \"expirySecs\": 3600}")
+        -d "amountSat=$amount_sat&description=$label&expirySeconds=3600")
       echo "$resp" | jq .
-      invoice=$(echo "$resp" | jq -r '.invoice')
+      invoice=$(echo "$resp" | jq -r '.serialized')
       payment_hash=$(echo "$resp" | jq -r '.paymentHash')
-      checkout_id=$(echo "$resp" | jq -r '.checkoutId')
-
-      if [ -z "$checkout_id" ] || [ "$checkout_id" = "null" ]; then
-        echo "FAIL: no checkoutId in response"
-        return 1
-      fi
-      echo "==> [$label] checkoutId: $checkout_id"
-      checkout_ids+=("$checkout_id")
 
       echo "==> [$label] Paying from node2..."
       grpcurl -plaintext -import-path "{{ln_proto}}" -proto lightning.proto \

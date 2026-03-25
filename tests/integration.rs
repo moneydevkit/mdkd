@@ -7,8 +7,6 @@ use common::{
     WebhookReceiver,
 };
 
-use serde_json::json;
-
 const TEST_MNEMONIC: &str =
     "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
@@ -52,25 +50,27 @@ async fn test_create_and_get_invoice() {
 
     let server = MdkServerHandle::start(&bitcoind, None, Some(&lsp), TEST_MNEMONIC).await;
 
-    let body = serde_json::json!({
-        "amountMsat": 100_000_000,
-        "description": "test invoice",
-        "expirySecs": 3600,
-        "externalId": "order-42"
-    });
-
-    let resp = server.post("/v1/invoices", &body).await;
+    let resp = server
+        .post_form(
+            "/createinvoice",
+            &[
+                ("amountSat", "100000"),
+                ("description", "test invoice"),
+                ("expirySeconds", "3600"),
+                ("externalId", "order-42"),
+            ],
+        )
+        .await;
     assert_eq!(resp.status(), 200);
     let invoice: serde_json::Value = resp.json().await.unwrap();
-    let invoice_str = invoice["invoice"].as_str().unwrap();
+    let invoice_str = invoice["serialized"].as_str().unwrap();
     let payment_hash = invoice["paymentHash"].as_str().unwrap();
     assert!(
         invoice_str.starts_with("lnbcrt"),
         "Expected lnbcrt prefix, got: {invoice_str}"
     );
     assert!(!payment_hash.is_empty());
-    assert_eq!(invoice["externalId"].as_str().unwrap(), "order-42");
-    assert!(invoice["expiresAt"].as_u64().unwrap() > 0);
+    assert_eq!(invoice["amountSat"].as_u64().unwrap(), 100_000);
 
     // GET the invoice back.
     let resp: serde_json::Value = server
@@ -129,19 +129,21 @@ async fn test_payment_flow() {
     setup_payer_lsp_channel(&bitcoind, &payer, &lsp, 500_000).await;
 
     // First payment — triggers JIT channel open from LSP to server.
-    let body = serde_json::json!({
-        "amountMsat": 100_000_000,
-        "description": "payment test",
-        "expirySecs": 3600,
-        "externalId": "order-99"
-    });
     let invoice: serde_json::Value = server
-        .post("/v1/invoices", &body)
+        .post_form(
+            "/createinvoice",
+            &[
+                ("amountSat", "100000"),
+                ("description", "payment test"),
+                ("expirySeconds", "3600"),
+                ("externalId", "order-99"),
+            ],
+        )
         .await
         .json()
         .await
         .unwrap();
-    let invoice_str = invoice["invoice"].as_str().unwrap();
+    let invoice_str = invoice["serialized"].as_str().unwrap();
     let payment_hash = invoice["paymentHash"].as_str().unwrap().to_string();
 
     payer.pay_invoice(invoice_str);
@@ -165,19 +167,21 @@ async fn test_payment_flow() {
     }
 
     // Second payment — reuses the existing LSP->server channel.
-    let body = serde_json::json!({
-        "amountMsat": 50_000_000,
-        "description": "second payment",
-        "expirySecs": 3600,
-        "externalId": "order-100"
-    });
     let invoice: serde_json::Value = server
-        .post("/v1/invoices", &body)
+        .post_form(
+            "/createinvoice",
+            &[
+                ("amountSat", "50000"),
+                ("description", "second payment"),
+                ("expirySeconds", "3600"),
+                ("externalId", "order-100"),
+            ],
+        )
         .await
         .json()
         .await
         .unwrap();
-    let invoice_str = invoice["invoice"].as_str().unwrap();
+    let invoice_str = invoice["serialized"].as_str().unwrap();
     let payment_hash = invoice["paymentHash"].as_str().unwrap().to_string();
 
     payer.pay_invoice(invoice_str);
@@ -213,20 +217,22 @@ async fn test_webhook_delivery() {
     setup_payer_lsp_channel(&bitcoind, &payer, &lsp, 500_000).await;
 
     // Create invoice with webhook URL.
-    let body = serde_json::json!({
-        "amountMsat": 100_000_000,
-        "description": "webhook test",
-        "expirySecs": 3600,
-        "externalId": "hook-order-1",
-        "webhookUrl": webhook.url()
-    });
     let invoice: serde_json::Value = server
-        .post("/v1/invoices", &body)
+        .post_form(
+            "/createinvoice",
+            &[
+                ("amountSat", "100000"),
+                ("description", "webhook test"),
+                ("expirySeconds", "3600"),
+                ("externalId", "hook-order-1"),
+                ("webhookUrl", &webhook.url()),
+            ],
+        )
         .await
         .json()
         .await
         .unwrap();
-    let invoice_str = invoice["invoice"].as_str().unwrap();
+    let invoice_str = invoice["serialized"].as_str().unwrap();
     let payment_hash = invoice["paymentHash"].as_str().unwrap().to_string();
 
     payer.pay_invoice(invoice_str);
@@ -271,19 +277,21 @@ async fn test_getbalance_after_payment() {
     setup_payer_lsp_channel(&bitcoind, &payer, &lsp, 500_000).await;
 
     // Pay into the server node.
-    let body = serde_json::json!({
-        "amountMsat": 100_000_000,
-        "description": "balance test",
-        "expirySecs": 3600,
-        "externalId": "bal-1"
-    });
     let invoice: serde_json::Value = server
-        .post("/v1/invoices", &body)
+        .post_form(
+            "/createinvoice",
+            &[
+                ("amountSat", "100000"),
+                ("description", "balance test"),
+                ("expirySeconds", "3600"),
+                ("externalId", "bal-1"),
+            ],
+        )
         .await
         .json()
         .await
         .unwrap();
-    let invoice_str = invoice["invoice"].as_str().unwrap();
+    let invoice_str = invoice["serialized"].as_str().unwrap();
     let payment_hash = invoice["paymentHash"].as_str().unwrap().to_string();
 
     payer.pay_invoice(invoice_str);
@@ -324,16 +332,20 @@ async fn test_jit_channel_invoice() {
     setup_payer_lsp_channel(&bitcoind, &payer, &lsp, 500_000).await;
 
     // First payment — triggers JIT channel open from LSP to server.
-    let body = serde_json::json!({
-        "amountMsat": 100_000_000,
-        "description": "jit test",
-        "expirySecs": 3600,
-        "externalId": "jit-order-1"
-    });
-    let resp = server.post("/v1/invoices", &body).await;
+    let resp = server
+        .post_form(
+            "/createinvoice",
+            &[
+                ("amountSat", "100000"),
+                ("description", "jit test"),
+                ("expirySeconds", "3600"),
+                ("externalId", "jit-order-1"),
+            ],
+        )
+        .await;
     assert_eq!(resp.status(), 200);
     let invoice: serde_json::Value = resp.json().await.unwrap();
-    let invoice_str = invoice["invoice"].as_str().unwrap();
+    let invoice_str = invoice["serialized"].as_str().unwrap();
     assert!(
         invoice_str.starts_with("lnbcrt"),
         "Expected lnbcrt prefix, got: {invoice_str}"
@@ -361,19 +373,21 @@ async fn test_jit_channel_invoice() {
     }
 
     // Second payment — reuses the JIT channel (no new channel open).
-    let body = serde_json::json!({
-        "amountMsat": 50_000_000,
-        "description": "jit reuse test",
-        "expirySecs": 3600,
-        "externalId": "jit-order-2"
-    });
     let invoice: serde_json::Value = server
-        .post("/v1/invoices", &body)
+        .post_form(
+            "/createinvoice",
+            &[
+                ("amountSat", "50000"),
+                ("description", "jit reuse test"),
+                ("expirySeconds", "3600"),
+                ("externalId", "jit-order-2"),
+            ],
+        )
         .await
         .json()
         .await
         .unwrap();
-    let invoice_str = invoice["invoice"].as_str().unwrap();
+    let invoice_str = invoice["serialized"].as_str().unwrap();
     let payment_hash = invoice["paymentHash"].as_str().unwrap().to_string();
 
     payer.pay_invoice(invoice_str);
@@ -405,19 +419,21 @@ async fn test_decodeinvoice() {
     let server = MdkServerHandle::start(&bitcoind, None, Some(&lsp), TEST_MNEMONIC).await;
 
     // Create an invoice to decode.
-    let create_body = json!({
-        "amountMsat": 100_000_000,
-        "description": "decode test",
-        "expirySecs": 3600,
-        "externalId": "decode-1"
-    });
     let created: serde_json::Value = server
-        .post("/v1/invoices", &create_body)
+        .post_form(
+            "/createinvoice",
+            &[
+                ("amountSat", "100000"),
+                ("description", "decode test"),
+                ("expirySeconds", "3600"),
+                ("externalId", "decode-1"),
+            ],
+        )
         .await
         .json()
         .await
         .unwrap();
-    let invoice_str = created["invoice"].as_str().unwrap();
+    let invoice_str = created["serialized"].as_str().unwrap();
     let expected_hash = created["paymentHash"].as_str().unwrap();
 
     // Decode it.
@@ -484,10 +500,7 @@ async fn test_decodeoffer() {
     let decoded: serde_json::Value = resp.json().await.unwrap();
 
     assert_eq!(decoded["offerId"].as_str().unwrap().len(), 64);
-    assert_eq!(
-        decoded["description"].as_str().unwrap(),
-        "Test vectors"
-    );
+    assert_eq!(decoded["description"].as_str().unwrap(), "Test vectors");
     assert_eq!(
         decoded["issuer"].as_str().unwrap(),
         "https://bolt12.org BOLT12 industries"

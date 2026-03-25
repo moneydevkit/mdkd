@@ -2,8 +2,8 @@ pub mod auth;
 pub mod balance;
 pub mod decode;
 pub mod error;
+pub mod info;
 pub mod invoices;
-pub mod node;
 
 use std::sync::Arc;
 
@@ -35,7 +35,7 @@ pub fn router(state: AppState) -> Router {
         .route("/decodeoffer", post(decode_offer));
 
     let full_routes = Router::new()
-        .route("/v1/invoices", post(create_invoice))
+        .route("/createinvoice", post(create_invoice))
         .layer(middleware::from_fn(auth::require_full_access));
 
     read_only_routes
@@ -49,9 +49,9 @@ pub fn router(state: AppState) -> Router {
 
 async fn create_invoice(
     State(state): State<AppState>,
-    body: axum::Json<crate::types::CreateInvoiceRequest>,
+    axum::Form(req): axum::Form<crate::types::CreateInvoiceRequest>,
 ) -> Result<axum::Json<crate::types::CreateInvoiceResponse>, error::AppError> {
-    invoices::handle_create_invoice(state.node, state.metadata_store, state.mdk_client, body).await
+    invoices::handle_create_invoice(state.node, state.metadata_store, state.mdk_client, &req).await
 }
 
 async fn get_invoice(

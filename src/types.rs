@@ -57,33 +57,29 @@ pub struct DecodeOfferResponse {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateInvoiceRequest {
-    pub amount_msat: Option<u64>,
-    pub description: String,
-    pub expiry_secs: u32,
+    pub amount_sat: Option<u64>,
+    pub description: Option<String>,
+    pub description_hash: Option<String>,
+    pub expiry_seconds: Option<u32>,
     pub external_id: Option<String>,
     pub webhook_url: Option<String>,
+    // mdk-platform extensions
     pub product: Option<String>,
     pub currency: Option<String>,
     pub success_url: Option<String>,
-    pub metadata: Option<serde_json::Value>,
-    pub customer: Option<CheckoutCustomerInput>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CheckoutCustomerInput {
-    pub name: Option<String>,
-    pub email: Option<String>,
-    pub external_id: Option<String>,
+    pub metadata: Option<String>,
+    pub customer_name: Option<String>,
+    pub customer_email: Option<String>,
+    pub customer_external_id: Option<String>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateInvoiceResponse {
-    pub invoice: String,
+    pub amount_sat: Option<u64>,
     pub payment_hash: String,
-    pub external_id: Option<String>,
-    pub expires_at: u64,
+    pub serialized: String,
+    // mdk-platform extensions
     pub checkout_id: String,
 }
 
