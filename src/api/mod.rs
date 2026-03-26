@@ -29,6 +29,7 @@ pub struct AppState {
 pub fn router(state: AppState) -> Router {
     let read_only_routes = Router::new()
         .route("/getinfo", get(get_info))
+        .route("/payments/incoming", get(list_incoming_payments))
         .route("/payments/incoming/{payment_hash}", get(get_incoming_payment))
         .route("/getbalance", get(get_balance))
         .route("/decodeinvoice", post(decode_invoice))
@@ -59,6 +60,13 @@ async fn get_incoming_payment(
     path: axum::extract::Path<String>,
 ) -> Result<axum::Json<crate::types::IncomingPaymentResponse>, error::AppError> {
     invoices::handle_get_incoming_payment(state.node, state.metadata_store, path).await
+}
+
+async fn list_incoming_payments(
+    State(state): State<AppState>,
+    axum::extract::Query(params): axum::extract::Query<crate::types::ListPaymentsRequest>,
+) -> Result<axum::Json<Vec<crate::types::IncomingPaymentResponse>>, error::AppError> {
+    invoices::handle_list_incoming_payments(state.node, state.metadata_store, &params).await
 }
 
 async fn get_info(

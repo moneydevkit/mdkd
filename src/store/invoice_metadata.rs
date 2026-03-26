@@ -43,10 +43,16 @@ impl InvoiceMetadataStore {
 				amount_sat INTEGER,
 				created_at INTEGER NOT NULL,
 				expires_at INTEGER NOT NULL DEFAULT 0,
-				notified_expired INTEGER NOT NULL DEFAULT 0
+				notified_expired INTEGER NOT NULL DEFAULT 0,
+				paid INTEGER NOT NULL DEFAULT 0
 			);",
         )
         .map_err(|e| io::Error::other(format!("Failed to create metadata table: {}", e)))?;
+
+        // Migration: add paid column for existing databases.
+        let _ = conn.execute_batch(
+            "ALTER TABLE mdk_invoice_metadata ADD COLUMN paid INTEGER NOT NULL DEFAULT 0;",
+        );
 
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -143,6 +149,75 @@ impl InvoiceMetadataStore {
         )
         .map_err(|e| io::Error::other(format!("Failed to mark expired notified: {}", e)))?;
         Ok(())
+    }
+
+    pub fn mark_paid(&self, payment_hash: &str) -> io::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE mdk_invoice_metadata SET paid = 1 WHERE payment_hash = ?1",
+            [payment_hash],
+        )
+        .map_err(|e| io::Error::other(format!("Failed to mark payment paid: {}", e)))?;
+        Ok(())
+    }
+
+    /// List invoices with pagination.
+    ///
+    /// `from`/`to` always filter on `created_at`.
+    /// `all=false` (default) restricts to paid invoices only.
+    pub fn list(
+        &self,
+        from: i64,
+        to: i64,
+        limit: i64,
+        offset: i64,
+        all: bool,
+        external_id: Option<&str>,
+    ) -> io::Result<Vec<InvoiceMetadata>> {
+        let conn = self.conn.lock().unwrap();
+
+        let sql = if all {
+            "SELECT payment_hash, external_id, webhook_url, checkout_id, description, invoice, amount_sat, created_at, expires_at
+             FROM mdk_invoice_metadata
+             WHERE created_at >= ?1 AND created_at <= ?2
+               AND (?3 IS NULL OR external_id = ?3)
+             ORDER BY created_at DESC, rowid DESC
+             LIMIT ?4 OFFSET ?5"
+        } else {
+            "SELECT payment_hash, external_id, webhook_url, checkout_id, description, invoice, amount_sat, created_at, expires_at
+             FROM mdk_invoice_metadata
+             WHERE paid = 1
+               AND created_at >= ?1 AND created_at <= ?2
+               AND (?3 IS NULL OR external_id = ?3)
+             ORDER BY created_at DESC, rowid DESC
+             LIMIT ?4 OFFSET ?5"
+        };
+
+        let mut stmt = conn
+            .prepare(sql)
+            .map_err(|e| io::Error::other(format!("Failed to prepare list query: {e}")))?;
+
+        let rows = stmt
+            .query_map(
+                rusqlite::params![from, to, external_id, limit, offset],
+                |row| {
+                    Ok(InvoiceMetadata {
+                        payment_hash: row.get(0)?,
+                        external_id: row.get(1)?,
+                        webhook_url: row.get(2)?,
+                        checkout_id: row.get(3)?,
+                        description: row.get(4)?,
+                        invoice: row.get(5)?,
+                        amount_sat: row.get(6)?,
+                        created_at: row.get(7)?,
+                        expires_at: row.get(8)?,
+                    })
+                },
+            )
+            .map_err(|e| io::Error::other(format!("Failed to query invoice list: {e}")))?;
+
+        rows.map(|row| row.map_err(|e| io::Error::other(format!("Failed to read row: {e}"))))
+            .collect()
     }
 
     pub fn now() -> i64 {

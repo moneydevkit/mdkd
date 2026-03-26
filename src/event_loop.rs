@@ -71,6 +71,10 @@ pub async fn run_event_loop(
                 let hash_str = payment_hash.to_string();
                 match metadata_store.get_by_payment_hash(&hash_str) {
                     Ok(Some(metadata)) => {
+                        if let Err(e) = metadata_store.mark_paid(&hash_str) {
+                            error!("Failed to mark payment paid: {e}");
+                        }
+
                         if let Some(webhook_url) = metadata.webhook_url {
                             let event = WebhookEvent::PaymentReceived {
                                 payment_hash: hash_str.clone(),

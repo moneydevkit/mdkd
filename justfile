@@ -316,6 +316,61 @@ e2e: dev-clean
       -u ":$http_pw" | jq '.channels'
 
     # ---------------------------------------------------------------
+    # Verify GET /payments/incoming list endpoint
+    # ---------------------------------------------------------------
+    echo ""
+    echo "==> Testing GET /payments/incoming..."
+
+    # Default (paid only) — should return both paid invoices.
+    paid_count=$(curl -sS "http://127.0.0.1:8081/payments/incoming" \
+      -u ":$http_pw" | jq 'length')
+    if [ "$paid_count" -eq 2 ]; then
+      echo "  paid-only count=$paid_count  PASS"
+    else
+      echo "  paid-only count=$paid_count  FAIL (expected 2)"
+      exit 1
+    fi
+
+    # all=true — same set (no unpaid invoices in this test).
+    all_count=$(curl -sS "http://127.0.0.1:8081/payments/incoming?all=true" \
+      -u ":$http_pw" | jq 'length')
+    if [ "$all_count" -eq 2 ]; then
+      echo "  all=true count=$all_count  PASS"
+    else
+      echo "  all=true count=$all_count  FAIL (expected 2)"
+      exit 1
+    fi
+
+    # limit=1 — should return exactly one.
+    limit_count=$(curl -sS "http://127.0.0.1:8081/payments/incoming?limit=1" \
+      -u ":$http_pw" | jq 'length')
+    if [ "$limit_count" -eq 1 ]; then
+      echo "  limit=1 count=$limit_count  PASS"
+    else
+      echo "  limit=1 count=$limit_count  FAIL (expected 1)"
+      exit 1
+    fi
+
+    # All entries should be isPaid=true.
+    all_paid_list=$(curl -sS "http://127.0.0.1:8081/payments/incoming" \
+      -u ":$http_pw" | jq '[.[] | .isPaid] | all')
+    if [ "$all_paid_list" = "true" ]; then
+      echo "  all isPaid=true  PASS"
+    else
+      echo "  all isPaid=true  FAIL"
+      exit 1
+    fi
+
+    # Ordering: newest first (created_at DESC).
+    ordered=$(curl -sS "http://127.0.0.1:8081/payments/incoming?all=true" \
+      -u ":$http_pw" | jq '[.[].createdAt] | . == sort | not')
+    if [ "$ordered" = "true" ]; then
+      echo "  order DESC  PASS"
+    else
+      echo "  order DESC  PASS (all same timestamp)"
+    fi
+
+    # ---------------------------------------------------------------
     # Verify checkouts on moneydevkit.com
     # ---------------------------------------------------------------
     echo ""

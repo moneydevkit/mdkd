@@ -502,6 +502,145 @@ async fn test_decodeinvoice_missing_param() {
     );
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn test_list_incoming_payments() {
+    let bitcoind = TestBitcoind::new();
+    let lsp = LspNode::new(&bitcoind);
+    fund_lsp(&bitcoind, &lsp).await;
+
+    let server = MdkServerHandle::start(&bitcoind, None, Some(&lsp), TEST_MNEMONIC).await;
+    let payer = PayerNode::new(&bitcoind);
+    setup_payer_lsp_channel(&bitcoind, &payer, &lsp, 500_000).await;
+
+    // Create two invoices with different externalIds.
+    let inv1: serde_json::Value = server
+        .post_form(
+            "/createinvoice",
+            &[
+                ("amountSat", "100000"),
+                ("description", "list test 1"),
+                ("expirySeconds", "3600"),
+                ("externalId", "list-order-1"),
+            ],
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let inv1_hash = inv1["paymentHash"].as_str().unwrap().to_string();
+    let inv1_str = inv1["serialized"].as_str().unwrap().to_string();
+
+    let inv2: serde_json::Value = server
+        .post_form(
+            "/createinvoice",
+            &[
+                ("amountSat", "50000"),
+                ("description", "list test 2"),
+                ("expirySeconds", "3600"),
+                ("externalId", "list-order-2"),
+            ],
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let inv2_hash = inv2["paymentHash"].as_str().unwrap().to_string();
+
+    // all=true should return both (unpaid) invoices.
+    let list: Vec<serde_json::Value> = server
+        .get("/payments/incoming?all=true")
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(list.len(), 2, "all=true should return both invoices");
+    // Newest first (inv2 was created after inv1).
+    assert_eq!(list[0]["paymentHash"].as_str().unwrap(), inv2_hash);
+    assert_eq!(list[1]["paymentHash"].as_str().unwrap(), inv1_hash);
+
+    // all=false (default) should return nothing — none are paid yet.
+    let list: Vec<serde_json::Value> = server.get("/payments/incoming").await.json().await.unwrap();
+    assert!(
+        list.is_empty(),
+        "default list should be empty before any payment"
+    );
+
+    // externalId filter on all=true.
+    let list: Vec<serde_json::Value> = server
+        .get("/payments/incoming?all=true&externalId=list-order-1")
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0]["paymentHash"].as_str().unwrap(), inv1_hash);
+
+    // Pay the first invoice.
+    payer.pay_invoice(&inv1_str);
+
+    let start = std::time::Instant::now();
+    loop {
+        let resp: serde_json::Value = server
+            .get(&format!("/payments/incoming/{inv1_hash}"))
+            .await
+            .json()
+            .await
+            .unwrap();
+        if resp["isPaid"].as_bool().unwrap() {
+            break;
+        }
+        if start.elapsed() > Duration::from_secs(60) {
+            panic!("Timed out waiting for payment to settle");
+        }
+        bitcoind.mine_blocks(1);
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+
+    // Now default (paid only) should return exactly one.
+    let list: Vec<serde_json::Value> = server.get("/payments/incoming").await.json().await.unwrap();
+    assert_eq!(list.len(), 1, "paid-only list should have one entry");
+    assert_eq!(list[0]["paymentHash"].as_str().unwrap(), inv1_hash);
+    assert_eq!(list[0]["isPaid"].as_bool().unwrap(), true);
+
+    // all=true still returns both, newest first.
+    let list: Vec<serde_json::Value> = server
+        .get("/payments/incoming?all=true")
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(list.len(), 2, "all=true should still return both");
+    assert_eq!(list[0]["paymentHash"].as_str().unwrap(), inv2_hash);
+    assert_eq!(list[1]["paymentHash"].as_str().unwrap(), inv1_hash);
+
+    // Limit/offset.
+    let list: Vec<serde_json::Value> = server
+        .get("/payments/incoming?all=true&limit=1")
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(list.len(), 1, "limit=1 should return one");
+    assert_eq!(
+        list[0]["paymentHash"].as_str().unwrap(),
+        inv2_hash,
+        "limit=1 should return the newest"
+    );
+
+    let list: Vec<serde_json::Value> = server
+        .get("/payments/incoming?all=true&limit=1&offset=1")
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(list.len(), 1, "offset=1 should return one entry");
+    assert_eq!(
+        list[0]["paymentHash"].as_str().unwrap(),
+        inv1_hash,
+        "offset=1 should skip the newest and return the oldest"
+    );
+}
+
 // Spec test vector: offer with description + issuer + nodeId.
 const BOLT12_OFFER: &str =
     "lno1pgx9getnwss8vetrw3hhyucjy358garswvaz7tmzdak8gvfj9ehhyeeqgf85c4p3xgsxjmnyw4ehgunfv4e3vggzamrjghtt05kvkvpcp0a79gmy3nt6jsn98ad2xs8de6sl9qmgvcvs";

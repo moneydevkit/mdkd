@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use axum::extract::Path;
@@ -9,7 +10,7 @@ use ldk_server::ldk_node::lightning::ln::channelmanager::PaymentId;
 use ldk_server::ldk_node::lightning_invoice::{
     Bolt11Invoice, Bolt11InvoiceDescription, Description, Sha256,
 };
-use ldk_server::ldk_node::payment::{PaymentKind, PaymentStatus};
+use ldk_server::ldk_node::payment::{PaymentDetails, PaymentKind, PaymentStatus};
 use ldk_server::ldk_node::Node;
 use log::{error, info};
 
@@ -17,7 +18,9 @@ use crate::api::error::AppError;
 use crate::mdk::client::MdkApiClient;
 use crate::mdk::types::{CheckoutCustomer, CreateCheckoutRequest, RegisterInvoiceRequest};
 use crate::store::invoice_metadata::{InvoiceMetadata, InvoiceMetadataStore};
-use crate::types::{CreateInvoiceRequest, CreateInvoiceResponse, IncomingPaymentResponse};
+use crate::types::{
+    CreateInvoiceRequest, CreateInvoiceResponse, IncomingPaymentResponse, ListPaymentsRequest,
+};
 
 /// Cap to keep BOLT11 invoices compact (smaller QR codes).
 /// Not a spec limit. Use `descriptionHash` for longer descriptions.
@@ -210,25 +213,76 @@ pub async fn handle_get_incoming_payment(
 
     let hash_bytes = <[u8; 32]>::from_hex(&payment_hash)
         .map_err(|_| AppError::BadRequest("Invalid payment hash hex".into()))?;
-    let payment_id = PaymentId(hash_bytes);
+    let details = node.payment(&PaymentId(hash_bytes));
 
+    Ok(Json(enrich_metadata(&metadata, details.as_ref())))
+}
+
+pub async fn handle_list_incoming_payments(
+    node: Arc<Node>,
+    metadata_store: Arc<InvoiceMetadataStore>,
+    params: &ListPaymentsRequest,
+) -> Result<Json<Vec<IncomingPaymentResponse>>, AppError> {
+    let now = InvoiceMetadataStore::now();
+    let from = params.from.unwrap_or(0);
+    let to = params.to.unwrap_or(now);
+    let limit = params.limit.unwrap_or(20);
+    let offset = params.offset.unwrap_or(0);
+    let all = params.all.unwrap_or(false);
+
+    let rows = metadata_store
+        .list(from, to, limit, offset, all, params.external_id.as_deref())
+        .map_err(|e| AppError::Internal(format!("Failed to list invoices: {e}")))?;
+
+    let wanted: HashSet<[u8; 32]> = rows
+        .iter()
+        .filter_map(|m| <[u8; 32]>::from_hex(&m.payment_hash).ok())
+        .collect();
+
+    let payment_map: HashMap<[u8; 32], PaymentDetails> = node
+        .list_payments_with_filter(|p| wanted.contains(&p.id.0))
+        .into_iter()
+        .map(|p| (p.id.0, p))
+        .collect();
+
+    let payments = rows
+        .iter()
+        .map(|m| {
+            let details = match <[u8; 32]>::from_hex(&m.payment_hash) {
+                Ok(bytes) => payment_map.get(&bytes),
+                Err(_) => {
+                    error!("Corrupt payment_hash in DB: {}", m.payment_hash);
+                    None
+                }
+            };
+            enrich_metadata(m, details)
+        })
+        .collect();
+
+    Ok(Json(payments))
+}
+
+/// Build an `IncomingPaymentResponse` from stored metadata + LDK payment details.
+fn enrich_metadata(
+    metadata: &InvoiceMetadata,
+    details: Option<&PaymentDetails>,
+) -> IncomingPaymentResponse {
     let requested_sat = metadata.amount_sat.map(|s| s as u64);
 
-    let (is_paid, preimage, received_sat, completed_at) = match node.payment(&payment_id) {
-        Some(details) => {
-            let preimage = extract_preimage(&details.kind);
-            let is_paid = details.status == PaymentStatus::Succeeded;
+    let (is_paid, preimage, received_sat, completed_at) = match details {
+        Some(d) => {
+            let preimage = extract_preimage(&d.kind);
+            let is_paid = d.status == PaymentStatus::Succeeded;
             let received_sat = if is_paid {
-                details.amount_msat.unwrap_or(0) / 1000
+                d.amount_msat.unwrap_or(0) / 1000
             } else {
                 0
             };
             let completed_at = if is_paid {
-                Some(details.latest_update_timestamp)
+                Some(d.latest_update_timestamp)
             } else {
                 None
             };
-
             (is_paid, preimage, received_sat, completed_at)
         }
         None => (false, None, 0, None),
@@ -242,28 +296,27 @@ pub async fn handle_get_incoming_payment(
         0
     };
 
-    let created_at = metadata.created_at;
     let expires_at = if metadata.expires_at > 0 {
         Some(metadata.expires_at)
     } else {
         None
     };
 
-    Ok(Json(IncomingPaymentResponse {
-        payment_hash,
+    IncomingPaymentResponse {
+        payment_hash: metadata.payment_hash.clone(),
         preimage,
-        external_id: metadata.external_id,
-        description: metadata.description,
-        invoice: metadata.invoice,
+        external_id: metadata.external_id.clone(),
+        description: metadata.description.clone(),
+        invoice: metadata.invoice.clone(),
         is_paid,
         is_expired,
         requested_sat,
         received_sat,
         fees,
         completed_at,
-        created_at,
+        created_at: metadata.created_at,
         expires_at,
-    }))
+    }
 }
 
 fn extract_preimage(kind: &PaymentKind) -> Option<String> {
@@ -280,6 +333,123 @@ fn extract_preimage(kind: &PaymentKind) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ldk_server::ldk_node::lightning::types::payment::{PaymentHash, PaymentPreimage};
+    use ldk_server::ldk_node::payment::PaymentDirection;
+
+    fn test_metadata() -> InvoiceMetadata {
+        InvoiceMetadata {
+            payment_hash: "aa".repeat(32),
+            external_id: Some("ext-1".into()),
+            webhook_url: None,
+            checkout_id: "chk_1".into(),
+            description: Some("coffee".into()),
+            invoice: Some("lnbcrt1...".into()),
+            amount_sat: Some(1000),
+            created_at: 1700000000,
+            expires_at: 1700003600,
+        }
+    }
+
+    fn paid_details() -> PaymentDetails {
+        PaymentDetails {
+            id: PaymentId([0xaa; 32]),
+            kind: PaymentKind::Bolt11 {
+                hash: PaymentHash([0xaa; 32]),
+                preimage: Some(PaymentPreimage([0xbb; 32])),
+                secret: None,
+            },
+            amount_msat: Some(950_000),
+            fee_paid_msat: None,
+            direction: PaymentDirection::Inbound,
+            status: PaymentStatus::Succeeded,
+            latest_update_timestamp: 1700001000,
+        }
+    }
+
+    fn pending_details() -> PaymentDetails {
+        PaymentDetails {
+            id: PaymentId([0xaa; 32]),
+            kind: PaymentKind::Bolt11 {
+                hash: PaymentHash([0xaa; 32]),
+                preimage: None,
+                secret: None,
+            },
+            amount_msat: None,
+            fee_paid_msat: None,
+            direction: PaymentDirection::Inbound,
+            status: PaymentStatus::Pending,
+            latest_update_timestamp: 1700000500,
+        }
+    }
+
+    #[test]
+    fn enrich_no_details() {
+        let m = test_metadata();
+        let r = enrich_metadata(&m, None);
+        assert!(!r.is_paid);
+        assert!(r.preimage.is_none());
+        assert_eq!(r.received_sat, 0);
+        assert_eq!(r.fees, 0);
+        assert!(r.completed_at.is_none());
+        assert_eq!(r.requested_sat, Some(1000));
+        assert_eq!(r.payment_hash, m.payment_hash);
+        assert_eq!(r.external_id.as_deref(), Some("ext-1"));
+    }
+
+    #[test]
+    fn enrich_paid() {
+        let m = test_metadata();
+        let d = paid_details();
+        let r = enrich_metadata(&m, Some(&d));
+        assert!(r.is_paid);
+        assert!(!r.is_expired);
+        assert!(r.preimage.is_some());
+        assert_eq!(r.received_sat, 950);
+        assert_eq!(r.fees, 50); // 1000 requested - 950 received
+        assert_eq!(r.completed_at, Some(1700001000));
+    }
+
+    #[test]
+    fn enrich_pending() {
+        let m = test_metadata();
+        let d = pending_details();
+        let r = enrich_metadata(&m, Some(&d));
+        assert!(!r.is_paid);
+        assert!(r.preimage.is_none());
+        assert_eq!(r.received_sat, 0);
+        assert_eq!(r.fees, 0);
+        assert!(r.completed_at.is_none());
+    }
+
+    #[test]
+    fn enrich_paid_never_expired() {
+        // A paid invoice should never report is_expired, even if the
+        // expiry timestamp is in the past.
+        let mut m = test_metadata();
+        m.expires_at = 1; // long in the past
+        let d = paid_details();
+        let r = enrich_metadata(&m, Some(&d));
+        assert!(r.is_paid);
+        assert!(!r.is_expired);
+    }
+
+    #[test]
+    fn enrich_expired_unpaid() {
+        let mut m = test_metadata();
+        m.expires_at = 1; // long in the past
+        let r = enrich_metadata(&m, None);
+        assert!(!r.is_paid);
+        assert!(r.is_expired);
+    }
+
+    #[test]
+    fn enrich_zero_expires_at_not_expired() {
+        let mut m = test_metadata();
+        m.expires_at = 0;
+        let r = enrich_metadata(&m, None);
+        assert!(!r.is_expired);
+        assert_eq!(r.expires_at, None);
+    }
 
     fn test_req(description: Option<&str>, description_hash: Option<&str>) -> CreateInvoiceRequest {
         CreateInvoiceRequest {
