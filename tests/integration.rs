@@ -290,6 +290,7 @@ async fn test_getbalance_empty() {
 
     let resp: serde_json::Value = server.get("/getbalance").await.json().await.unwrap();
     assert_eq!(resp["balanceSat"].as_u64().unwrap(), 0);
+    assert_eq!(resp["onchainBalanceSat"].as_u64().unwrap(), 0);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -787,6 +788,103 @@ async fn test_closechannel_invalid_hex() {
         .post_form("/closechannel", &[("channelId", "not-hex")])
         .await;
     assert_eq!(resp.status(), 400);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_getbalance_onchain_after_close() {
+    let bitcoind = TestBitcoind::new();
+    let lsp = LspNode::new(&bitcoind);
+    fund_lsp(&bitcoind, &lsp).await;
+
+    let server = MdkServerHandle::start(&bitcoind, None, Some(&lsp), TEST_MNEMONIC).await;
+    let payer = PayerNode::new(&bitcoind);
+    setup_payer_lsp_channel(&bitcoind, &payer, &lsp, 500_000).await;
+
+    // Pay into the server to trigger a JIT channel open.
+    let invoice: serde_json::Value = server
+        .post_form(
+            "/createinvoice",
+            &[
+                ("amountSat", "100000"),
+                ("description", "onchain balance test"),
+                ("expirySeconds", "3600"),
+            ],
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let invoice_str = invoice["serialized"].as_str().unwrap();
+    let payment_hash = invoice["paymentHash"].as_str().unwrap().to_string();
+
+    payer.pay_invoice(invoice_str);
+
+    // Wait for payment to settle.
+    let start = std::time::Instant::now();
+    loop {
+        let resp: serde_json::Value = server
+            .get(&format!("/payments/incoming/{payment_hash}"))
+            .await
+            .json()
+            .await
+            .unwrap();
+        if resp["isPaid"].as_bool().unwrap() {
+            break;
+        }
+        if start.elapsed() > Duration::from_secs(60) {
+            panic!("Timed out waiting for payment to settle");
+        }
+        bitcoind.mine_blocks(1);
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+
+    // Onchain balance should be zero before closing the channel.
+    let resp: serde_json::Value = server.get("/getbalance").await.json().await.unwrap();
+    assert_eq!(resp["onchainBalanceSat"].as_u64().unwrap(), 0);
+    let lightning_balance = resp["balanceSat"].as_u64().unwrap();
+    assert!(lightning_balance > 0);
+
+    // Close the channel.
+    let channels: Vec<serde_json::Value> = server.get("/listchannels").await.json().await.unwrap();
+    assert_eq!(channels.len(), 1);
+    let channel_id = channels[0]["channelId"].as_str().unwrap();
+    let resp = server
+        .post_form("/closechannel", &[("channelId", channel_id)])
+        .await;
+    assert_eq!(resp.status(), 200);
+
+    // Wait for the channel to disappear and the closing tx to confirm.
+    let start = std::time::Instant::now();
+    loop {
+        bitcoind.mine_blocks(1);
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let channels: Vec<serde_json::Value> =
+            server.get("/listchannels").await.json().await.unwrap();
+        if channels.is_empty() {
+            break;
+        }
+        if start.elapsed() > Duration::from_secs(60) {
+            panic!("Timed out waiting for channel to close");
+        }
+    }
+
+    // Mine enough blocks for the closing output to be spendable.
+    bitcoind.mine_blocks(6);
+    tokio::time::sleep(Duration::from_secs(3)).await;
+
+    // After close, onchain balance should hold roughly the channel funds
+    // (minus on-chain fees). Lightning balance should be zero.
+    let resp: serde_json::Value = server.get("/getbalance").await.json().await.unwrap();
+    let onchain = resp["onchainBalanceSat"].as_u64().unwrap();
+    assert!(
+        onchain > 0,
+        "Expected non-zero onchain balance after channel close, got: {resp}"
+    );
+    assert_eq!(
+        resp["balanceSat"].as_u64().unwrap(),
+        0,
+        "Lightning balance should be zero after channel close"
+    );
 }
 
 // Spec test vector: offer with description + issuer + nodeId.

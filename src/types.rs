@@ -119,6 +119,8 @@ pub struct IncomingPaymentResponse {
 #[serde(rename_all = "camelCase")]
 pub struct GetBalanceResponse {
     pub balance_sat: u64,
+    /// Spendable on-chain balance in sats.
+    pub onchain_balance_sat: u64,
 }
 
 #[derive(Serialize)]
