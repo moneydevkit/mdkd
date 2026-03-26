@@ -74,14 +74,20 @@ async fn test_create_and_get_invoice() {
 
     // GET the invoice back.
     let resp: serde_json::Value = server
-        .get(&format!("/v1/invoices/{payment_hash}"))
+        .get(&format!("/payments/incoming/{payment_hash}"))
         .await
         .json()
         .await
         .unwrap();
     assert_eq!(resp["paymentHash"].as_str().unwrap(), payment_hash);
-    assert_eq!(resp["status"].as_str().unwrap(), "pending");
+    assert_eq!(resp["isPaid"].as_bool().unwrap(), false);
+    assert_eq!(resp["requestedSat"].as_u64().unwrap(), 100_000);
+    assert_eq!(resp["receivedSat"].as_u64().unwrap(), 0);
+    assert_eq!(resp["fees"].as_u64().unwrap(), 0);
+    assert_eq!(resp["isExpired"].as_bool().unwrap(), false);
     assert_eq!(resp["externalId"].as_str().unwrap(), "order-42");
+    assert_eq!(resp["description"].as_str().unwrap(), "test invoice");
+    assert!(resp["invoice"].as_str().unwrap().starts_with("lnbcrt"));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -113,7 +119,7 @@ async fn test_invoice_not_found() {
     let server = MdkServerHandle::start(&bitcoind, None, None, TEST_MNEMONIC).await;
 
     let resp = server
-        .get("/v1/invoices/0000000000000000000000000000000000000000000000000000000000000000")
+        .get("/payments/incoming/0000000000000000000000000000000000000000000000000000000000000000")
         .await;
     assert_eq!(resp.status(), 404);
 }
@@ -149,22 +155,35 @@ async fn test_payment_flow() {
     payer.pay_invoice(invoice_str);
 
     let start = std::time::Instant::now();
-    loop {
+    let settled: serde_json::Value = loop {
         let resp: serde_json::Value = server
-            .get(&format!("/v1/invoices/{payment_hash}"))
+            .get(&format!("/payments/incoming/{payment_hash}"))
             .await
             .json()
             .await
             .unwrap();
-        if resp["status"].as_str().unwrap() == "received" {
-            break;
+        if resp["isPaid"].as_bool().unwrap() {
+            break resp;
         }
         if start.elapsed() > Duration::from_secs(60) {
             panic!("Timed out waiting for first payment to settle");
         }
         bitcoind.mine_blocks(1);
         tokio::time::sleep(Duration::from_secs(2)).await;
-    }
+    };
+
+    // requestedSat is the original invoice amount; receivedSat is after LSP fee.
+    let requested = settled["requestedSat"].as_u64().unwrap();
+    let received = settled["receivedSat"].as_u64().unwrap();
+    let fees = settled["fees"].as_u64().unwrap();
+    assert_eq!(requested, 100_000);
+    assert!(received < requested, "receivedSat should be less than requestedSat due to LSP fee");
+    assert_eq!(fees, requested - received, "fees should equal requestedSat - receivedSat");
+    assert!(settled["preimage"].as_str().is_some());
+    assert_eq!(settled["description"].as_str().unwrap(), "payment test");
+    assert!(settled["completedAt"].as_u64().is_some());
+    // A paid invoice is never expired.
+    assert_eq!(settled["isExpired"].as_bool().unwrap(), false);
 
     // Second payment — reuses the existing LSP->server channel.
     let invoice: serde_json::Value = server
@@ -189,12 +208,12 @@ async fn test_payment_flow() {
     let start = std::time::Instant::now();
     loop {
         let resp: serde_json::Value = server
-            .get(&format!("/v1/invoices/{payment_hash}"))
+            .get(&format!("/payments/incoming/{payment_hash}"))
             .await
             .json()
             .await
             .unwrap();
-        if resp["status"].as_str().unwrap() == "received" {
+        if resp["isPaid"].as_bool().unwrap() {
             break;
         }
         if start.elapsed() > Duration::from_secs(60) {
@@ -300,12 +319,12 @@ async fn test_getbalance_after_payment() {
     let start = std::time::Instant::now();
     loop {
         let resp: serde_json::Value = server
-            .get(&format!("/v1/invoices/{payment_hash}"))
+            .get(&format!("/payments/incoming/{payment_hash}"))
             .await
             .json()
             .await
             .unwrap();
-        if resp["status"].as_str().unwrap() == "received" {
+        if resp["isPaid"].as_bool().unwrap() {
             break;
         }
         if start.elapsed() > Duration::from_secs(60) {
@@ -357,12 +376,12 @@ async fn test_jit_channel_invoice() {
     let start = std::time::Instant::now();
     loop {
         let resp: serde_json::Value = server
-            .get(&format!("/v1/invoices/{payment_hash}"))
+            .get(&format!("/payments/incoming/{payment_hash}"))
             .await
             .json()
             .await
             .unwrap();
-        if resp["status"].as_str().unwrap() == "received" {
+        if resp["isPaid"].as_bool().unwrap() {
             break;
         }
         if start.elapsed() > Duration::from_secs(60) {
@@ -395,12 +414,12 @@ async fn test_jit_channel_invoice() {
     let start = std::time::Instant::now();
     loop {
         let resp: serde_json::Value = server
-            .get(&format!("/v1/invoices/{payment_hash}"))
+            .get(&format!("/payments/incoming/{payment_hash}"))
             .await
             .json()
             .await
             .unwrap();
-        if resp["status"].as_str().unwrap() == "received" {
+        if resp["isPaid"].as_bool().unwrap() {
             break;
         }
         if start.elapsed() > Duration::from_secs(60) {

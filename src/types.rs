@@ -83,13 +83,24 @@ pub struct CreateInvoiceResponse {
     pub checkout_id: String,
 }
 
+/// All timestamps are unix epoch **seconds** — BOLT11 expiry and LDK's
+/// `latest_update_timestamp` are seconds-precision.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GetInvoiceResponse {
+pub struct IncomingPaymentResponse {
     pub payment_hash: String,
-    pub amount_msat: Option<u64>,
-    pub status: String,
+    pub preimage: Option<String>,
     pub external_id: Option<String>,
+    pub description: Option<String>,
+    pub invoice: Option<String>,
+    pub is_paid: bool,
+    pub is_expired: bool,
+    pub requested_sat: Option<u64>,
+    pub received_sat: u64,
+    pub fees: u64,
+    pub completed_at: Option<u64>,
+    pub created_at: i64,
+    pub expires_at: Option<i64>,
 }
 
 #[derive(Serialize)]

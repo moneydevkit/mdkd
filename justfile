@@ -176,7 +176,7 @@ dev-status payment_hash:
     #!/usr/bin/env bash
     set -euo pipefail
     pw=$(just http-password)
-    curl -s "http://127.0.0.1:8081/v1/invoices/{{payment_hash}}" \
+    curl -s "http://127.0.0.1:8081/payments/incoming/{{payment_hash}}" \
       -u ":$pw" \
     | jq .
 
@@ -270,11 +270,11 @@ e2e: dev-clean
 
       echo -n "==> [$label] Waiting for settlement"
       for i in {1..30}; do
-        status=$(curl -sS "http://127.0.0.1:8081/v1/invoices/$payment_hash" \
-          -u ":$http_pw" | jq -r '.status')
-        if [ "$status" = "received" ]; then
+        is_paid=$(curl -sS "http://127.0.0.1:8081/payments/incoming/$payment_hash" \
+          -u ":$http_pw" | jq -r '.isPaid')
+        if [ "$is_paid" = "true" ]; then
           echo " done!"
-          curl -sS "http://127.0.0.1:8081/v1/invoices/$payment_hash" \
+          curl -sS "http://127.0.0.1:8081/payments/incoming/$payment_hash" \
             -u ":$http_pw" | jq .
           return 0
         fi
@@ -282,7 +282,7 @@ e2e: dev-clean
         sleep 0.5
       done
       echo " timeout!"
-      curl -sS "http://127.0.0.1:8081/v1/invoices/$payment_hash" \
+      curl -sS "http://127.0.0.1:8081/payments/incoming/$payment_hash" \
         -u ":$http_pw" | jq .
       return 1
     }

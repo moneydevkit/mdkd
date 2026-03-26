@@ -15,6 +15,9 @@ pub struct InvoiceMetadata {
     pub external_id: Option<String>,
     pub webhook_url: Option<String>,
     pub checkout_id: String,
+    pub description: Option<String>,
+    pub invoice: Option<String>,
+    pub amount_sat: Option<i64>,
     pub created_at: i64,
     pub expires_at: i64,
 }
@@ -35,6 +38,9 @@ impl InvoiceMetadataStore {
 				external_id TEXT,
 				webhook_url TEXT,
 				checkout_id TEXT NOT NULL,
+				description TEXT,
+				invoice TEXT,
+				amount_sat INTEGER,
 				created_at INTEGER NOT NULL,
 				expires_at INTEGER NOT NULL DEFAULT 0,
 				notified_expired INTEGER NOT NULL DEFAULT 0
@@ -50,13 +56,16 @@ impl InvoiceMetadataStore {
     pub fn insert(&self, metadata: &InvoiceMetadata) -> io::Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-			"INSERT INTO mdk_invoice_metadata (payment_hash, external_id, webhook_url, checkout_id, created_at, expires_at)
-			 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+			"INSERT INTO mdk_invoice_metadata (payment_hash, external_id, webhook_url, checkout_id, description, invoice, amount_sat, created_at, expires_at)
+			 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
 			(
 				&metadata.payment_hash,
 				&metadata.external_id,
 				&metadata.webhook_url,
 				&metadata.checkout_id,
+				&metadata.description,
+				&metadata.invoice,
+				metadata.amount_sat,
 				metadata.created_at,
 				metadata.expires_at,
 			),
@@ -69,7 +78,7 @@ impl InvoiceMetadataStore {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare(
-                "SELECT payment_hash, external_id, webhook_url, checkout_id, created_at, expires_at
+                "SELECT payment_hash, external_id, webhook_url, checkout_id, description, invoice, amount_sat, created_at, expires_at
 				 FROM mdk_invoice_metadata WHERE payment_hash = ?1",
             )
             .map_err(|e| io::Error::other(format!("Failed to prepare query: {}", e)))?;
@@ -81,8 +90,11 @@ impl InvoiceMetadataStore {
                     external_id: row.get(1)?,
                     webhook_url: row.get(2)?,
                     checkout_id: row.get(3)?,
-                    created_at: row.get(4)?,
-                    expires_at: row.get(5)?,
+                    description: row.get(4)?,
+                    invoice: row.get(5)?,
+                    amount_sat: row.get(6)?,
+                    created_at: row.get(7)?,
+                    expires_at: row.get(8)?,
                 })
             })
             .optional()
@@ -95,7 +107,7 @@ impl InvoiceMetadataStore {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare(
-                "SELECT payment_hash, external_id, webhook_url, checkout_id, created_at, expires_at
+                "SELECT payment_hash, external_id, webhook_url, checkout_id, description, invoice, amount_sat, created_at, expires_at
 				 FROM mdk_invoice_metadata
 				 WHERE expires_at > 0 AND expires_at <= ?1 AND notified_expired = 0 AND webhook_url IS NOT NULL",
             )
@@ -108,8 +120,11 @@ impl InvoiceMetadataStore {
                     external_id: row.get(1)?,
                     webhook_url: row.get(2)?,
                     checkout_id: row.get(3)?,
-                    created_at: row.get(4)?,
-                    expires_at: row.get(5)?,
+                    description: row.get(4)?,
+                    invoice: row.get(5)?,
+                    amount_sat: row.get(6)?,
+                    created_at: row.get(7)?,
+                    expires_at: row.get(8)?,
                 })
             })
             .map_err(|e| io::Error::other(format!("Failed to query expired invoices: {}", e)))?;

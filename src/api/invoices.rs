@@ -9,7 +9,7 @@ use ldk_server::ldk_node::lightning::ln::channelmanager::PaymentId;
 use ldk_server::ldk_node::lightning_invoice::{
     Bolt11Invoice, Bolt11InvoiceDescription, Description, Sha256,
 };
-use ldk_server::ldk_node::payment::PaymentStatus;
+use ldk_server::ldk_node::payment::{PaymentKind, PaymentStatus};
 use ldk_server::ldk_node::Node;
 use log::{error, info};
 
@@ -17,7 +17,7 @@ use crate::api::error::AppError;
 use crate::mdk::client::MdkApiClient;
 use crate::mdk::types::{CheckoutCustomer, CreateCheckoutRequest, RegisterInvoiceRequest};
 use crate::store::invoice_metadata::{InvoiceMetadata, InvoiceMetadataStore};
-use crate::types::{CreateInvoiceRequest, CreateInvoiceResponse, GetInvoiceResponse};
+use crate::types::{CreateInvoiceRequest, CreateInvoiceResponse, IncomingPaymentResponse};
 
 /// Cap to keep BOLT11 invoices compact (smaller QR codes).
 /// Not a spec limit. Use `descriptionHash` for longer descriptions.
@@ -66,11 +66,15 @@ pub async fn handle_create_invoice(
     let expires_at = invoice.expires_at().map(|d| d.as_secs()).unwrap_or(0);
     let amount_sat = invoice.amount_milli_satoshis().map(|m| m / 1000);
 
+    let invoice_str = invoice.to_string();
     let metadata = InvoiceMetadata {
         payment_hash: payment_hash.clone(),
         external_id: req.external_id.clone(),
         webhook_url: req.webhook_url.clone(),
         checkout_id,
+        description: req.description.clone(),
+        invoice: Some(invoice_str.clone()),
+        amount_sat: amount_sat.map(|s| s as i64),
         created_at: InvoiceMetadataStore::now(),
         expires_at: expires_at as i64,
     };
@@ -82,7 +86,7 @@ pub async fn handle_create_invoice(
     Ok(Json(CreateInvoiceResponse {
         amount_sat,
         payment_hash,
-        serialized: invoice.to_string(),
+        serialized: invoice_str,
         checkout_id: metadata.checkout_id,
     }))
 }
@@ -194,42 +198,161 @@ fn extract_scid(invoice: &Bolt11Invoice) -> String {
         .unwrap_or_default()
 }
 
-pub async fn handle_get_invoice(
+pub async fn handle_get_incoming_payment(
     node: Arc<Node>,
     metadata_store: Arc<InvoiceMetadataStore>,
     Path(payment_hash): Path<String>,
-) -> Result<Json<GetInvoiceResponse>, AppError> {
+) -> Result<Json<IncomingPaymentResponse>, AppError> {
     let metadata = metadata_store
         .get_by_payment_hash(&payment_hash)
         .map_err(|e| AppError::Internal(format!("Failed to query metadata: {}", e)))?
         .ok_or_else(|| AppError::NotFound(format!("Invoice {} not found", payment_hash)))?;
 
-    // For Bolt11 inbound payments, PaymentId is the payment_hash bytes.
     let hash_bytes = <[u8; 32]>::from_hex(&payment_hash)
         .map_err(|_| AppError::BadRequest("Invalid payment hash hex".into()))?;
     let payment_id = PaymentId(hash_bytes);
 
-    let now = InvoiceMetadataStore::now();
-    let is_expired = metadata.expires_at > 0 && metadata.expires_at <= now;
+    let requested_sat = metadata.amount_sat.map(|s| s as u64);
 
-    let (amount_msat, status) = match node.payment(&payment_id) {
+    let (is_paid, preimage, received_sat, completed_at) = match node.payment(&payment_id) {
         Some(details) => {
-            let status_str = match details.status {
-                PaymentStatus::Pending if is_expired => "expired",
-                PaymentStatus::Pending => "pending",
-                PaymentStatus::Succeeded => "received",
-                PaymentStatus::Failed => "failed",
+            let preimage = extract_preimage(&details.kind);
+            let is_paid = details.status == PaymentStatus::Succeeded;
+            let received_sat = if is_paid {
+                details.amount_msat.unwrap_or(0) / 1000
+            } else {
+                0
             };
-            (details.amount_msat, status_str.to_string())
+            let completed_at = if is_paid {
+                Some(details.latest_update_timestamp)
+            } else {
+                None
+            };
+
+            (is_paid, preimage, received_sat, completed_at)
         }
-        None if is_expired => (None, "expired".to_string()),
-        None => (None, "pending".to_string()),
+        None => (false, None, 0, None),
     };
 
-    Ok(Json(GetInvoiceResponse {
+    let now = InvoiceMetadataStore::now();
+    let is_expired = !is_paid && metadata.expires_at > 0 && metadata.expires_at <= now;
+    let fees = if is_paid {
+        requested_sat.unwrap_or(0).saturating_sub(received_sat)
+    } else {
+        0
+    };
+
+    let created_at = metadata.created_at;
+    let expires_at = if metadata.expires_at > 0 {
+        Some(metadata.expires_at)
+    } else {
+        None
+    };
+
+    Ok(Json(IncomingPaymentResponse {
         payment_hash,
-        amount_msat,
-        status,
+        preimage,
         external_id: metadata.external_id,
+        description: metadata.description,
+        invoice: metadata.invoice,
+        is_paid,
+        is_expired,
+        requested_sat,
+        received_sat,
+        fees,
+        completed_at,
+        created_at,
+        expires_at,
     }))
+}
+
+fn extract_preimage(kind: &PaymentKind) -> Option<String> {
+    match kind {
+        PaymentKind::Bolt11 { preimage, .. }
+        | PaymentKind::Bolt11Jit { preimage, .. }
+        | PaymentKind::Bolt12Offer { preimage, .. }
+        | PaymentKind::Bolt12Refund { preimage, .. }
+        | PaymentKind::Spontaneous { preimage, .. } => preimage.map(|p| format!("{}", p)),
+        PaymentKind::Onchain { .. } => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_req(description: Option<&str>, description_hash: Option<&str>) -> CreateInvoiceRequest {
+        CreateInvoiceRequest {
+            amount_sat: None,
+            description: description.map(String::from),
+            description_hash: description_hash.map(String::from),
+            expiry_seconds: None,
+            external_id: None,
+            webhook_url: None,
+            product: None,
+            currency: None,
+            success_url: None,
+            metadata: None,
+            customer_name: None,
+            customer_email: None,
+            customer_external_id: None,
+        }
+    }
+
+    #[test]
+    fn description_direct() {
+        let req = test_req(Some("coffee"), None);
+        assert!(matches!(
+            parse_description(&req),
+            Ok(Bolt11InvoiceDescription::Direct(_))
+        ));
+    }
+
+    #[test]
+    fn description_hash() {
+        let hash = "ab".repeat(32);
+        let req = test_req(None, Some(&hash));
+        assert!(matches!(
+            parse_description(&req),
+            Ok(Bolt11InvoiceDescription::Hash(_))
+        ));
+    }
+
+    #[test]
+    fn description_too_long() {
+        let long = "x".repeat(MAX_DESCRIPTION_LEN + 1);
+        let req = test_req(Some(&long), None);
+        assert!(matches!(
+            parse_description(&req),
+            Err(AppError::BadRequest(msg)) if msg.contains("too long")
+        ));
+    }
+
+    #[test]
+    fn description_hash_invalid_hex() {
+        let req = test_req(None, Some("not_hex"));
+        assert!(matches!(
+            parse_description(&req),
+            Err(AppError::BadRequest(msg)) if msg.contains("Invalid descriptionHash")
+        ));
+    }
+
+    #[test]
+    fn description_neither_provided() {
+        let req = test_req(None, None);
+        assert!(matches!(
+            parse_description(&req),
+            Err(AppError::BadRequest(msg)) if msg.contains("either")
+        ));
+    }
+
+    #[test]
+    fn description_both_provided() {
+        let hash = "ab".repeat(32);
+        let req = test_req(Some("coffee"), Some(&hash));
+        assert!(matches!(
+            parse_description(&req),
+            Err(AppError::BadRequest(msg)) if msg.contains("either")
+        ));
+    }
 }
