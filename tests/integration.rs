@@ -887,6 +887,180 @@ async fn test_getbalance_onchain_after_close() {
     );
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn test_sendtoaddress_invalid_address() {
+    let bitcoind = TestBitcoind::new();
+    let server = MdkServerHandle::start(&bitcoind, None, None, TEST_MNEMONIC).await;
+
+    let resp = server
+        .post_form(
+            "/sendtoaddress",
+            &[
+                ("address", "not-a-real-address"),
+                ("amountSat", "50000"),
+                ("feerateSatByte", "10"),
+            ],
+        )
+        .await;
+    assert_eq!(resp.status(), 400);
+
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["code"].as_str().unwrap(), "bad_request");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_sendtoaddress_missing_params() {
+    let bitcoind = TestBitcoind::new();
+    let server = MdkServerHandle::start(&bitcoind, None, None, TEST_MNEMONIC).await;
+
+    // Missing all required params.
+    let resp = server.post_form("/sendtoaddress", &[]).await;
+    assert!(
+        resp.status() == 400 || resp.status() == 422,
+        "Expected 4xx error, got {}",
+        resp.status()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_sendtoaddress_insufficient_funds() {
+    let bitcoind = TestBitcoind::new();
+    let server = MdkServerHandle::start(&bitcoind, None, None, TEST_MNEMONIC).await;
+
+    // Valid regtest address but no on-chain funds.
+    let resp = server
+        .post_form(
+            "/sendtoaddress",
+            &[
+                ("address", "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080"),
+                ("amountSat", "50000"),
+                ("feerateSatByte", "10"),
+            ],
+        )
+        .await;
+    assert_eq!(resp.status(), 500);
+
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["code"].as_str().unwrap(), "internal_error");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_sendtoaddress_success() {
+    let bitcoind = TestBitcoind::new();
+    let lsp = LspNode::new(&bitcoind);
+    fund_lsp(&bitcoind, &lsp).await;
+
+    let server = MdkServerHandle::start(&bitcoind, None, Some(&lsp), TEST_MNEMONIC).await;
+    let payer = PayerNode::new(&bitcoind);
+    setup_payer_lsp_channel(&bitcoind, &payer, &lsp, 500_000).await;
+
+    // Pay into the server to trigger a JIT channel open.
+    let invoice: serde_json::Value = server
+        .post_form(
+            "/createinvoice",
+            &[
+                ("amountSat", "100000"),
+                ("description", "sendtoaddress test"),
+                ("expirySeconds", "3600"),
+            ],
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let invoice_str = invoice["serialized"].as_str().unwrap();
+    let payment_hash = invoice["paymentHash"].as_str().unwrap().to_string();
+
+    payer.pay_invoice(invoice_str);
+
+    // Wait for payment to settle.
+    let start = std::time::Instant::now();
+    loop {
+        let resp: serde_json::Value = server
+            .get(&format!("/payments/incoming/{payment_hash}"))
+            .await
+            .json()
+            .await
+            .unwrap();
+        if resp["isPaid"].as_bool().unwrap() {
+            break;
+        }
+        if start.elapsed() > Duration::from_secs(60) {
+            panic!("Timed out waiting for payment to settle");
+        }
+        bitcoind.mine_blocks(1);
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+
+    // Close the channel to move funds on-chain.
+    let channels: Vec<serde_json::Value> = server.get("/listchannels").await.json().await.unwrap();
+    assert_eq!(channels.len(), 1);
+    let channel_id = channels[0]["channelId"].as_str().unwrap();
+    let resp = server
+        .post_form("/closechannel", &[("channelId", channel_id)])
+        .await;
+    assert_eq!(resp.status(), 200);
+
+    // Wait for channel to close and funds to become spendable.
+    let start = std::time::Instant::now();
+    loop {
+        bitcoind.mine_blocks(1);
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let channels: Vec<serde_json::Value> =
+            server.get("/listchannels").await.json().await.unwrap();
+        if channels.is_empty() {
+            break;
+        }
+        if start.elapsed() > Duration::from_secs(60) {
+            panic!("Timed out waiting for channel to close");
+        }
+    }
+
+    bitcoind.mine_blocks(6);
+    tokio::time::sleep(Duration::from_secs(3)).await;
+
+    // Verify we have on-chain funds.
+    let balance: serde_json::Value = server.get("/getbalance").await.json().await.unwrap();
+    let onchain = balance["onchainBalanceSat"].as_u64().unwrap();
+    assert!(onchain > 0, "Expected on-chain balance, got: {balance}");
+
+    // Send to a fresh bitcoind address.
+    let dest_addr = bitcoind.bitcoind.client.new_address().unwrap().to_string();
+    let send_amount = 10_000u64;
+
+    let resp = server
+        .post_form(
+            "/sendtoaddress",
+            &[
+                ("address", &dest_addr),
+                ("amountSat", &send_amount.to_string()),
+                ("feerateSatByte", "10"),
+            ],
+        )
+        .await;
+    assert_eq!(resp.status(), 200);
+    let txid = resp.text().await.unwrap();
+    assert_eq!(txid.len(), 64, "txid should be 64-char hex");
+
+    // Confirm the send tx, then poll until the wallet syncs.
+    bitcoind.mine_blocks(1);
+    let start = std::time::Instant::now();
+    loop {
+        let balance_after: serde_json::Value =
+            server.get("/getbalance").await.json().await.unwrap();
+        let onchain_after = balance_after["onchainBalanceSat"].as_u64().unwrap();
+        if onchain_after < onchain {
+            break;
+        }
+        if start.elapsed() > Duration::from_secs(30) {
+            panic!(
+                "On-chain balance never decreased after send: before={onchain}, after={onchain_after}"
+            );
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+}
+
 // Spec test vector: offer with description + issuer + nodeId.
 const BOLT12_OFFER: &str =
     "lno1pgx9getnwss8vetrw3hhyucjy358garswvaz7tmzdak8gvfj9ehhyeeqgf85c4p3xgsxjmnyw4ehgunfv4e3vggzamrjghtt05kvkvpcp0a79gmy3nt6jsn98ad2xs8de6sl9qmgvcvs";

@@ -5,6 +5,7 @@ pub mod decode;
 pub mod error;
 pub mod info;
 pub mod invoices;
+pub mod onchain;
 
 use std::sync::Arc;
 
@@ -43,6 +44,7 @@ pub fn router(state: AppState) -> Router {
     let full_routes = Router::new()
         .route("/createinvoice", post(create_invoice))
         .route("/closechannel", post(close_channel))
+        .route("/sendtoaddress", post(send_to_address))
         .layer(middleware::from_fn(auth::require_full_access));
 
     read_only_routes
@@ -104,6 +106,13 @@ async fn close_channel(
     axum::Form(req): axum::Form<crate::types::CloseChannelRequest>,
 ) -> Result<axum::http::StatusCode, error::AppError> {
     channels::handle_close_channel(state.node, &req).await
+}
+
+async fn send_to_address(
+    State(state): State<AppState>,
+    axum::Form(req): axum::Form<crate::types::SendToAddressRequest>,
+) -> Result<String, error::AppError> {
+    onchain::handle_send_to_address(state.node, &req).await
 }
 
 async fn decode_offer(

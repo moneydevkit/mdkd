@@ -203,6 +203,14 @@ impl WebhookEvent {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SendToAddressRequest {
+    pub address: String,
+    pub amount_sat: u64,
+    pub feerate_sat_byte: Option<u64>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CloseChannelRequest {
     pub channel_id: String,
 }
