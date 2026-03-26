@@ -42,6 +42,7 @@ pub fn router(state: AppState) -> Router {
 
     let full_routes = Router::new()
         .route("/createinvoice", post(create_invoice))
+        .route("/closechannel", post(close_channel))
         .layer(middleware::from_fn(auth::require_full_access));
 
     read_only_routes
@@ -96,6 +97,13 @@ async fn list_channels(
     State(state): State<AppState>,
 ) -> Result<axum::Json<Vec<crate::types::ChannelInfo>>, error::AppError> {
     channels::handle_list_channels(state.node).await
+}
+
+async fn close_channel(
+    State(state): State<AppState>,
+    axum::Form(req): axum::Form<crate::types::CloseChannelRequest>,
+) -> Result<axum::http::StatusCode, error::AppError> {
+    channels::handle_close_channel(state.node, &req).await
 }
 
 async fn decode_offer(

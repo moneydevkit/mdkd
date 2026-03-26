@@ -648,6 +648,147 @@ async fn test_list_incoming_payments() {
     );
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn test_listchannels_empty() {
+    let bitcoind = TestBitcoind::new();
+    let server = MdkServerHandle::start(&bitcoind, None, None, TEST_MNEMONIC).await;
+
+    let channels: Vec<serde_json::Value> = server.get("/listchannels").await.json().await.unwrap();
+    assert!(channels.is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_listchannels_and_closechannel() {
+    let bitcoind = TestBitcoind::new();
+    let lsp = LspNode::new(&bitcoind);
+    fund_lsp(&bitcoind, &lsp).await;
+
+    let server = MdkServerHandle::start(&bitcoind, None, Some(&lsp), TEST_MNEMONIC).await;
+    let payer = PayerNode::new(&bitcoind);
+    setup_payer_lsp_channel(&bitcoind, &payer, &lsp, 500_000).await;
+
+    // No channels yet on the server side.
+    let channels: Vec<serde_json::Value> = server.get("/listchannels").await.json().await.unwrap();
+    assert!(channels.is_empty());
+
+    // Pay into the server to trigger a JIT channel open.
+    let invoice: serde_json::Value = server
+        .post_form(
+            "/createinvoice",
+            &[
+                ("amountSat", "100000"),
+                ("description", "channel test"),
+                ("expirySeconds", "3600"),
+            ],
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let invoice_str = invoice["serialized"].as_str().unwrap();
+    let payment_hash = invoice["paymentHash"].as_str().unwrap().to_string();
+
+    payer.pay_invoice(invoice_str);
+
+    // Wait for payment to settle (JIT channel will be created).
+    let start = std::time::Instant::now();
+    loop {
+        let resp: serde_json::Value = server
+            .get(&format!("/payments/incoming/{payment_hash}"))
+            .await
+            .json()
+            .await
+            .unwrap();
+        if resp["isPaid"].as_bool().unwrap() {
+            break;
+        }
+        if start.elapsed() > Duration::from_secs(60) {
+            panic!("Timed out waiting for payment to settle");
+        }
+        bitcoind.mine_blocks(1);
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+
+    // Now we should have exactly one channel.
+    let channels: Vec<serde_json::Value> = server.get("/listchannels").await.json().await.unwrap();
+    assert_eq!(channels.len(), 1);
+
+    let ch = &channels[0];
+    assert!(
+        ch["channelId"].as_str().unwrap().len() == 64,
+        "channelId should be 64-char hex"
+    );
+    assert!(ch["balanceSat"].as_u64().unwrap() > 0);
+    assert!(ch["capacitySat"].as_u64().unwrap() > 0);
+    assert!(ch["inboundLiquiditySat"].is_number());
+    // State should be ONLINE or OPENING (depends on confirmation depth).
+    let state = ch["state"].as_str().unwrap();
+    assert!(
+        state == "ONLINE" || state == "OPENING",
+        "unexpected state: {state}"
+    );
+
+    // /getinfo should report the same channel.
+    let info: serde_json::Value = server.get("/getinfo").await.json().await.unwrap();
+    let info_channels = info["channels"].as_array().unwrap();
+    assert_eq!(info_channels.len(), 1);
+    assert_eq!(
+        info_channels[0]["channelId"].as_str().unwrap(),
+        ch["channelId"].as_str().unwrap()
+    );
+
+    // Close the channel.
+    let channel_id = ch["channelId"].as_str().unwrap();
+    let resp = server
+        .post_form("/closechannel", &[("channelId", channel_id)])
+        .await;
+    assert_eq!(resp.status(), 200);
+
+    // After close initiation, the channel should eventually disappear
+    // from list_channels (LDK removes closing channels).
+    let start = std::time::Instant::now();
+    loop {
+        bitcoind.mine_blocks(1);
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let channels: Vec<serde_json::Value> =
+            server.get("/listchannels").await.json().await.unwrap();
+        if channels.is_empty() {
+            break;
+        }
+        if start.elapsed() > Duration::from_secs(60) {
+            panic!("Timed out waiting for channel to close");
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_closechannel_not_found() {
+    let bitcoind = TestBitcoind::new();
+    let server = MdkServerHandle::start(&bitcoind, None, None, TEST_MNEMONIC).await;
+
+    let resp = server
+        .post_form(
+            "/closechannel",
+            &[(
+                "channelId",
+                "0000000000000000000000000000000000000000000000000000000000000000",
+            )],
+        )
+        .await;
+    assert_eq!(resp.status(), 404);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_closechannel_invalid_hex() {
+    let bitcoind = TestBitcoind::new();
+    let server = MdkServerHandle::start(&bitcoind, None, None, TEST_MNEMONIC).await;
+
+    let resp = server
+        .post_form("/closechannel", &[("channelId", "not-hex")])
+        .await;
+    assert_eq!(resp.status(), 400);
+}
+
 // Spec test vector: offer with description + issuer + nodeId.
 const BOLT12_OFFER: &str =
     "lno1pgx9getnwss8vetrw3hhyucjy358garswvaz7tmzdak8gvfj9ehhyeeqgf85c4p3xgsxjmnyw4ehgunfv4e3vggzamrjghtt05kvkvpcp0a79gmy3nt6jsn98ad2xs8de6sl9qmgvcvs";

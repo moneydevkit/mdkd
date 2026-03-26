@@ -199,6 +199,12 @@ impl WebhookEvent {
     }
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloseChannelRequest {
+    pub channel_id: String,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiError {
