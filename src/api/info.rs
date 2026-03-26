@@ -5,31 +5,12 @@ use ldk_server::ldk_node::bitcoin::Network;
 use ldk_server::ldk_node::Node;
 
 use crate::api::error::AppError;
-use crate::types::{ChannelInfo, ChannelState, GetInfoResponse};
+use crate::types::{ChannelInfo, GetInfoResponse};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub async fn handle_get_info(node: Arc<Node>) -> Result<Json<GetInfoResponse>, AppError> {
-    let channels = node
-        .list_channels()
-        .into_iter()
-        .map(|ch| {
-            let state = match (ch.is_channel_ready, ch.is_usable) {
-                (true, true) => ChannelState::Online,
-                (true, false) => ChannelState::Offline,
-                (false, _) => ChannelState::Opening,
-            };
-
-            ChannelInfo {
-                state,
-                channel_id: ch.channel_id.to_string(),
-                balance_sat: ch.outbound_capacity_msat / 1000,
-                inbound_liquidity_sat: ch.inbound_capacity_msat / 1000,
-                capacity_sat: ch.channel_value_sats,
-                funding_tx_id: ch.funding_txo.map(|txo| txo.txid.to_string()),
-            }
-        })
-        .collect();
+    let channels = node.list_channels().iter().map(ChannelInfo::from).collect();
 
     let chain = match node.config().network {
         Network::Bitcoin => "mainnet",

@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod balance;
+pub mod channels;
 pub mod decode;
 pub mod error;
 pub mod info;
@@ -35,6 +36,7 @@ pub fn router(state: AppState) -> Router {
             get(get_incoming_payment),
         )
         .route("/getbalance", get(get_balance))
+        .route("/listchannels", get(list_channels))
         .route("/decodeinvoice", post(decode_invoice))
         .route("/decodeoffer", post(decode_offer));
 
@@ -88,6 +90,12 @@ async fn decode_invoice(
     axum::Form(req): axum::Form<crate::types::DecodeInvoiceRequest>,
 ) -> Result<axum::Json<crate::types::DecodeInvoiceResponse>, error::AppError> {
     decode::handle_decode_invoice(&req)
+}
+
+async fn list_channels(
+    State(state): State<AppState>,
+) -> Result<axum::Json<Vec<crate::types::ChannelInfo>>, error::AppError> {
+    channels::handle_list_channels(state.node).await
 }
 
 async fn decode_offer(

@@ -1,3 +1,4 @@
+use ldk_server::ldk_node::ChannelDetails;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
@@ -139,6 +140,25 @@ pub struct ChannelInfo {
     pub inbound_liquidity_sat: u64,
     pub capacity_sat: u64,
     pub funding_tx_id: Option<String>,
+}
+
+impl From<&ChannelDetails> for ChannelInfo {
+    fn from(ch: &ChannelDetails) -> Self {
+        let state = match (ch.is_channel_ready, ch.is_usable) {
+            (true, true) => ChannelState::Online,
+            (true, false) => ChannelState::Offline,
+            (false, _) => ChannelState::Opening,
+        };
+
+        Self {
+            state,
+            channel_id: ch.channel_id.to_string(),
+            balance_sat: ch.outbound_capacity_msat / 1000,
+            inbound_liquidity_sat: ch.inbound_capacity_msat / 1000,
+            capacity_sat: ch.channel_value_sats,
+            funding_tx_id: ch.funding_txo.map(|txo| txo.txid.to_string()),
+        }
+    }
 }
 
 /// LDK removes closing/closed channels from `list_channels()`, so those
