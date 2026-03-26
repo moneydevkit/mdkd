@@ -80,11 +80,11 @@ async fn test_create_and_get_invoice() {
         .await
         .unwrap();
     assert_eq!(resp["paymentHash"].as_str().unwrap(), payment_hash);
-    assert_eq!(resp["isPaid"].as_bool().unwrap(), false);
+    assert!(!resp["isPaid"].as_bool().unwrap());
     assert_eq!(resp["requestedSat"].as_u64().unwrap(), 100_000);
     assert_eq!(resp["receivedSat"].as_u64().unwrap(), 0);
     assert_eq!(resp["fees"].as_u64().unwrap(), 0);
-    assert_eq!(resp["isExpired"].as_bool().unwrap(), false);
+    assert!(!resp["isExpired"].as_bool().unwrap());
     assert_eq!(resp["externalId"].as_str().unwrap(), "order-42");
     assert_eq!(resp["description"].as_str().unwrap(), "test invoice");
     assert!(resp["invoice"].as_str().unwrap().starts_with("lnbcrt"));
@@ -177,13 +177,20 @@ async fn test_payment_flow() {
     let received = settled["receivedSat"].as_u64().unwrap();
     let fees = settled["fees"].as_u64().unwrap();
     assert_eq!(requested, 100_000);
-    assert!(received < requested, "receivedSat should be less than requestedSat due to LSP fee");
-    assert_eq!(fees, requested - received, "fees should equal requestedSat - receivedSat");
+    assert!(
+        received < requested,
+        "receivedSat should be less than requestedSat due to LSP fee"
+    );
+    assert_eq!(
+        fees,
+        requested - received,
+        "fees should equal requestedSat - receivedSat"
+    );
     assert!(settled["preimage"].as_str().is_some());
     assert_eq!(settled["description"].as_str().unwrap(), "payment test");
     assert!(settled["completedAt"].as_u64().is_some());
     // A paid invoice is never expired.
-    assert_eq!(settled["isExpired"].as_bool().unwrap(), false);
+    assert!(!settled["isExpired"].as_bool().unwrap());
 
     // Second payment — reuses the existing LSP->server channel.
     let invoice: serde_json::Value = server
@@ -600,7 +607,7 @@ async fn test_list_incoming_payments() {
     let list: Vec<serde_json::Value> = server.get("/payments/incoming").await.json().await.unwrap();
     assert_eq!(list.len(), 1, "paid-only list should have one entry");
     assert_eq!(list[0]["paymentHash"].as_str().unwrap(), inv1_hash);
-    assert_eq!(list[0]["isPaid"].as_bool().unwrap(), true);
+    assert!(list[0]["isPaid"].as_bool().unwrap());
 
     // all=true still returns both, newest first.
     let list: Vec<serde_json::Value> = server

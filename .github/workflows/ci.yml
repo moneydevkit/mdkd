@@ -33,4 +33,7 @@ jobs:
         uses: DeterminateSystems/magic-nix-cache-action@565684385bcd71bad329742eefe8d12f2e765b39 # v13
 
       - name: Run Nix checks
-        run: nix flake check
+        run: nix flake check --print-build-logs
+
+      - name: Run integration tests
+        run: nix build .#integration-test --print-build-logs

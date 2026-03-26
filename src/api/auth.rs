@@ -103,7 +103,10 @@ mod tests {
 
         read_only_routes
             .merge(full_routes)
-            .layer(middleware::from_fn_with_state(auth.clone(), auth_middleware))
+            .layer(middleware::from_fn_with_state(
+                auth.clone(),
+                auth_middleware,
+            ))
             .with_state(auth)
     }
 

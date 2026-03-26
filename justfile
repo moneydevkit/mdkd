@@ -1,28 +1,37 @@
 default:
     @just --list
 
-# Run all checks (fmt, clippy, test)
-check: fmt-check clippy
+system := env("NIX_SYSTEM")
+
+# Run all checks (fmt, clippy, unit tests)
+check: fmt-check clippy unit-test
 
 # Format code
 fmt:
-    cargo fmt --all
+    cargo fmt
     nixfmt flake.nix
 
-# Check formatting without modifying files
+# Check formatting
 fmt-check:
-    cargo fmt --all -- --check
-    nixfmt --check flake.nix
+    nix build .#checks.{{system}}.fmt
+
+# Run clippy
+clippy:
+    nix build .#checks.{{system}}.clippy
+
+# Run unit tests
+unit-test:
+    nix build .#checks.{{system}}.test
+
+# Run integration tests
+integration-test *args:
+    cargo nextest run --test integration {{args}}
 
 # Auto-fix lint issues
 fix:
-    cargo clippy --fix --allow-dirty --allow-staged
+    cargo clippy --all-targets --fix --allow-dirty --allow-staged
 
-# Run clippy check
-clippy:
-    cargo clippy -- -D warnings
-
-# Run tests
+# Run tests (cargo, all)
 test *args:
     cargo nextest run {{args}}
 

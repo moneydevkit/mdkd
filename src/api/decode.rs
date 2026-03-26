@@ -65,7 +65,9 @@ pub fn handle_decode_invoice(
     }))
 }
 
-pub fn handle_decode_offer(req: &DecodeOfferRequest) -> Result<Json<DecodeOfferResponse>, AppError> {
+pub fn handle_decode_offer(
+    req: &DecodeOfferRequest,
+) -> Result<Json<DecodeOfferResponse>, AppError> {
     let offer = Offer::from_str(&req.offer)
         .map_err(|e| AppError::BadRequest(format!("Invalid BOLT12 offer: {e:?}")))?;
 

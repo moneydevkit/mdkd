@@ -30,7 +30,10 @@ pub fn router(state: AppState) -> Router {
     let read_only_routes = Router::new()
         .route("/getinfo", get(get_info))
         .route("/payments/incoming", get(list_incoming_payments))
-        .route("/payments/incoming/{payment_hash}", get(get_incoming_payment))
+        .route(
+            "/payments/incoming/{payment_hash}",
+            get(get_incoming_payment),
+        )
         .route("/getbalance", get(get_balance))
         .route("/decodeinvoice", post(decode_invoice))
         .route("/decodeoffer", post(decode_offer));

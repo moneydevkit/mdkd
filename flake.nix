@@ -114,6 +114,14 @@
             commonArgs
             // {
               inherit cargoArtifacts;
+              doCheck = false; # Tests run in checks.test
+            }
+          );
+          integration-test = craneLib.cargoNextest (
+            commonArgs
+            // {
+              inherit cargoArtifacts;
+              cargoNextestExtraArgs = "--test integration";
             }
           );
         }
@@ -137,6 +145,7 @@
             commonArgs
             // {
               inherit cargoArtifacts;
+              cargoNextestExtraArgs = "--bin mdk-server";
             }
           );
         };
@@ -155,11 +164,16 @@
 
           env = {
             BITCOIND_EXE = "${pkgsUnstable.bitcoind}/bin/bitcoind";
+            NIX_SYSTEM = system;
           };
 
           shellHook = ''
             echo "================================================================================"
             echo "MDK Server Development Environment"
+
+            echo "Configuring Project..."
+            git config core.hooksPath .githooks
+
             echo "Development Environment Ready."
             echo "================================================================================"
           '';

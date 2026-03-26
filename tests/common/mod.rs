@@ -80,8 +80,6 @@ impl TestBitcoind {
 pub struct MdkServerHandle {
     child: Option<Child>,
     pub api_port: u16,
-    pub p2p_port: u16,
-    pub storage_dir: PathBuf,
     pub http_password_full: String,
     pub node_id: String,
     client: reqwest::Client,
@@ -179,8 +177,6 @@ rpc_password = "{rpc_password}"
         let mut handle = Self {
             child: Some(child),
             api_port,
-            p2p_port,
-            storage_dir,
             http_password_full: http_password_full.to_string(),
             node_id: String::new(),
             client,
@@ -203,16 +199,6 @@ rpc_password = "{rpc_password}"
         self.client
             .get(format!("{}{}", self.base_url(), path))
             .basic_auth("", Some(&self.http_password_full))
-            .send()
-            .await
-            .unwrap()
-    }
-
-    pub async fn post(&self, path: &str, body: &serde_json::Value) -> reqwest::Response {
-        self.client
-            .post(format!("{}{}", self.base_url(), path))
-            .basic_auth("", Some(&self.http_password_full))
-            .json(body)
             .send()
             .await
             .unwrap()
@@ -269,7 +255,6 @@ impl Drop for MdkServerHandle {
 
 pub struct PayerNode {
     pub node: Arc<Node>,
-    pub p2p_port: u16,
     _storage_dir: PathBuf,
 }
 
@@ -301,13 +286,8 @@ impl PayerNode {
 
         Self {
             node,
-            p2p_port,
             _storage_dir: storage_dir,
         }
-    }
-
-    pub fn node_id(&self) -> String {
-        self.node.node_id().to_string()
     }
 
     pub fn onchain_address(&self) -> String {
@@ -677,4 +657,3 @@ pub fn find_available_port() -> u16 {
         .unwrap()
         .port()
 }
-
