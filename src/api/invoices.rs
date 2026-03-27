@@ -77,9 +77,9 @@ pub async fn handle_create_invoice(
         checkout_id,
         description: req.description.clone(),
         invoice: Some(invoice_str.clone()),
-        amount_sat: amount_sat.map(|s| s as i64),
-        created_at: InvoiceMetadataStore::now(),
-        expires_at: expires_at as i64,
+        amount_sat,
+        created_at: crate::time::seconds_since_epoch(),
+        expires_at,
     };
 
     metadata_store
@@ -223,7 +223,7 @@ pub async fn handle_list_incoming_payments(
     metadata_store: Arc<InvoiceMetadataStore>,
     params: &ListPaymentsRequest,
 ) -> Result<Json<Vec<IncomingPaymentResponse>>, AppError> {
-    let now = InvoiceMetadataStore::now();
+    let now = crate::time::seconds_since_epoch();
     let from = params.from.unwrap_or(0);
     let to = params.to.unwrap_or(now);
     let limit = params.limit.unwrap_or(20);
@@ -267,7 +267,7 @@ fn enrich_metadata(
     metadata: &InvoiceMetadata,
     details: Option<&PaymentDetails>,
 ) -> IncomingPaymentResponse {
-    let requested_sat = metadata.amount_sat.map(|s| s as u64);
+    let requested_sat = metadata.amount_sat;
 
     let (is_paid, preimage, received_sat, completed_at) = match details {
         Some(d) => {
@@ -288,7 +288,7 @@ fn enrich_metadata(
         None => (false, None, 0, None),
     };
 
-    let now = InvoiceMetadataStore::now();
+    let now = crate::time::seconds_since_epoch();
     let is_expired = !is_paid && metadata.expires_at > 0 && metadata.expires_at <= now;
     let fees = if is_paid {
         requested_sat.unwrap_or(0).saturating_sub(received_sat)

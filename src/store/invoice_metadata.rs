@@ -1,7 +1,6 @@
 use std::io;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
 
@@ -17,9 +16,9 @@ pub struct InvoiceMetadata {
     pub checkout_id: String,
     pub description: Option<String>,
     pub invoice: Option<String>,
-    pub amount_sat: Option<i64>,
-    pub created_at: i64,
-    pub expires_at: i64,
+    pub amount_sat: Option<u64>,
+    pub created_at: u64,
+    pub expires_at: u64,
 }
 
 impl InvoiceMetadataStore {
@@ -71,9 +70,9 @@ impl InvoiceMetadataStore {
 				&metadata.checkout_id,
 				&metadata.description,
 				&metadata.invoice,
-				metadata.amount_sat,
-				metadata.created_at,
-				metadata.expires_at,
+				metadata.amount_sat.map(|s| s as i64),
+				metadata.created_at as i64,
+				metadata.expires_at as i64,
 			),
 		)
 		.map_err(|e| io::Error::other(format!("Failed to insert invoice metadata: {}", e)))?;
@@ -90,26 +89,14 @@ impl InvoiceMetadataStore {
             .map_err(|e| io::Error::other(format!("Failed to prepare query: {}", e)))?;
 
         let result = stmt
-            .query_row([payment_hash], |row| {
-                Ok(InvoiceMetadata {
-                    payment_hash: row.get(0)?,
-                    external_id: row.get(1)?,
-                    webhook_url: row.get(2)?,
-                    checkout_id: row.get(3)?,
-                    description: row.get(4)?,
-                    invoice: row.get(5)?,
-                    amount_sat: row.get(6)?,
-                    created_at: row.get(7)?,
-                    expires_at: row.get(8)?,
-                })
-            })
+            .query_row([payment_hash], |row| InvoiceMetadata::try_from(row))
             .optional()
             .map_err(|e| io::Error::other(format!("Failed to query invoice metadata: {}", e)))?;
 
         Ok(result)
     }
 
-    pub fn get_expired_pending(&self, now: i64) -> io::Result<Vec<InvoiceMetadata>> {
+    pub fn get_expired_pending(&self, now: u64) -> io::Result<Vec<InvoiceMetadata>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare(
@@ -120,19 +107,7 @@ impl InvoiceMetadataStore {
             .map_err(|e| io::Error::other(format!("Failed to prepare expired query: {}", e)))?;
 
         let rows = stmt
-            .query_map([now], |row| {
-                Ok(InvoiceMetadata {
-                    payment_hash: row.get(0)?,
-                    external_id: row.get(1)?,
-                    webhook_url: row.get(2)?,
-                    checkout_id: row.get(3)?,
-                    description: row.get(4)?,
-                    invoice: row.get(5)?,
-                    amount_sat: row.get(6)?,
-                    created_at: row.get(7)?,
-                    expires_at: row.get(8)?,
-                })
-            })
+            .query_map([now as i64], |row| InvoiceMetadata::try_from(row))
             .map_err(|e| io::Error::other(format!("Failed to query expired invoices: {}", e)))?;
 
         rows.map(|row| {
@@ -167,10 +142,10 @@ impl InvoiceMetadataStore {
     /// `all=false` (default) restricts to paid invoices only.
     pub fn list(
         &self,
-        from: i64,
-        to: i64,
-        limit: i64,
-        offset: i64,
+        from: u64,
+        to: u64,
+        limit: u64,
+        offset: u64,
         all: bool,
         external_id: Option<&str>,
     ) -> io::Result<Vec<InvoiceMetadata>> {
@@ -199,32 +174,37 @@ impl InvoiceMetadataStore {
 
         let rows = stmt
             .query_map(
-                rusqlite::params![from, to, external_id, limit, offset],
-                |row| {
-                    Ok(InvoiceMetadata {
-                        payment_hash: row.get(0)?,
-                        external_id: row.get(1)?,
-                        webhook_url: row.get(2)?,
-                        checkout_id: row.get(3)?,
-                        description: row.get(4)?,
-                        invoice: row.get(5)?,
-                        amount_sat: row.get(6)?,
-                        created_at: row.get(7)?,
-                        expires_at: row.get(8)?,
-                    })
-                },
+                rusqlite::params![
+                    from as i64,
+                    to as i64,
+                    external_id,
+                    limit as i64,
+                    offset as i64
+                ],
+                |row| InvoiceMetadata::try_from(row),
             )
             .map_err(|e| io::Error::other(format!("Failed to query invoice list: {e}")))?;
 
         rows.map(|row| row.map_err(|e| io::Error::other(format!("Failed to read row: {e}"))))
             .collect()
     }
+}
 
-    pub fn now() -> i64 {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("Time must be > 1970")
-            .as_secs() as i64
+impl<'a> TryFrom<&rusqlite::Row<'a>> for InvoiceMetadata {
+    type Error = rusqlite::Error;
+
+    fn try_from(row: &rusqlite::Row<'a>) -> rusqlite::Result<Self> {
+        Ok(Self {
+            payment_hash: row.get(0)?,
+            external_id: row.get(1)?,
+            webhook_url: row.get(2)?,
+            checkout_id: row.get(3)?,
+            description: row.get(4)?,
+            invoice: row.get(5)?,
+            amount_sat: row.get::<_, Option<i64>>(6)?.map(|v| v as u64),
+            created_at: row.get::<_, i64>(7)? as u64,
+            expires_at: row.get::<_, i64>(8)? as u64,
+        })
     }
 }
 

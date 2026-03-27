@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use hex::DisplayHex;
 use ldk_server::io::persist::paginated_kv_store::PaginatedKVStore;
@@ -16,6 +15,7 @@ use prost::Message;
 use crate::mdk::client::MdkApiClient;
 use crate::mdk::types::{PaymentEntry, PaymentReceivedRequest};
 use crate::store::invoice_metadata::InvoiceMetadataStore;
+use crate::time;
 use crate::types::WebhookEvent;
 use crate::webhook::dispatcher::spawn_webhook_delivery;
 
@@ -45,13 +45,13 @@ pub async fn run_event_loop(
 
                 if let Some(payment_details) = node.payment(&payment_id) {
                     let payment = payment_to_proto(payment_details);
-                    let time = now();
+                    let time = time::seconds_since_epoch();
 
                     match paginated_store.write(
                         PAYMENTS_PERSISTENCE_PRIMARY_NAMESPACE,
                         PAYMENTS_PERSISTENCE_SECONDARY_NAMESPACE,
                         &payment.id,
-                        time,
+                        time as i64,
                         &payment.encode_to_vec(),
                     ) {
                         Ok(_) => {
@@ -80,7 +80,7 @@ pub async fn run_event_loop(
                                 payment_hash: hash_str.clone(),
                                 amount_msat,
                                 external_id: metadata.external_id.clone(),
-                                timestamp: now(),
+                                timestamp: time::seconds_since_epoch(),
                             };
                             spawn_webhook_delivery(
                                 http_client.clone(),
@@ -176,7 +176,7 @@ pub async fn run_event_loop(
                     FORWARDED_PAYMENTS_PERSISTENCE_PRIMARY_NAMESPACE,
                     FORWARDED_PAYMENTS_PERSISTENCE_SECONDARY_NAMESPACE,
                     &forwarded_payment_id.to_lower_hex_string(),
-                    now(),
+                    time::seconds_since_epoch() as i64,
                     &forwarded_payment.encode_to_vec(),
                 ) {
                     Ok(_) => {
@@ -246,7 +246,7 @@ fn upsert_payment_proto(
         PAYMENTS_PERSISTENCE_PRIMARY_NAMESPACE,
         PAYMENTS_PERSISTENCE_SECONDARY_NAMESPACE,
         &payment.id,
-        now(),
+        time::seconds_since_epoch() as i64,
         &payment.encode_to_vec(),
     ) {
         Ok(_) => {
@@ -258,11 +258,4 @@ fn upsert_payment_proto(
             error!("Failed to write payment to persistence: {e}");
         }
     }
-}
-
-fn now() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Time must be > 1970")
-        .as_secs() as i64
 }

@@ -87,10 +87,10 @@ pub struct CreateInvoiceResponse {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListPaymentsRequest {
-    pub from: Option<i64>,
-    pub to: Option<i64>,
-    pub limit: Option<i64>,
-    pub offset: Option<i64>,
+    pub from: Option<u64>,
+    pub to: Option<u64>,
+    pub limit: Option<u64>,
+    pub offset: Option<u64>,
     pub all: Option<bool>,
     pub external_id: Option<String>,
 }
@@ -111,8 +111,8 @@ pub struct IncomingPaymentResponse {
     pub received_sat: u64,
     pub fees: u64,
     pub completed_at: Option<u64>,
-    pub created_at: i64,
-    pub expires_at: Option<i64>,
+    pub created_at: u64,
+    pub expires_at: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -182,18 +182,18 @@ pub enum WebhookEvent {
         payment_hash: String,
         amount_msat: u64,
         external_id: Option<String>,
-        timestamp: i64,
+        timestamp: u64,
     },
     #[serde(rename = "invoice_expired", rename_all = "camelCase")]
     InvoiceExpired {
         payment_hash: String,
         external_id: Option<String>,
-        timestamp: i64,
+        timestamp: u64,
     },
 }
 
 impl WebhookEvent {
-    pub fn timestamp(&self) -> i64 {
+    pub fn timestamp(&self) -> u64 {
         match self {
             WebhookEvent::PaymentReceived { timestamp, .. } => *timestamp,
             WebhookEvent::InvoiceExpired { timestamp, .. } => *timestamp,

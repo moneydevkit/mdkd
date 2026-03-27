@@ -4,6 +4,7 @@ use std::time::Duration;
 use log::{error, info};
 
 use crate::store::invoice_metadata::InvoiceMetadataStore;
+use crate::time;
 use crate::types::WebhookEvent;
 use crate::webhook::dispatcher::spawn_webhook_delivery;
 
@@ -17,7 +18,7 @@ pub async fn run_expiry_monitor(
     loop {
         tokio::time::sleep(POLL_INTERVAL).await;
 
-        let now = InvoiceMetadataStore::now();
+        let now = time::seconds_since_epoch();
         let expired = match metadata_store.get_expired_pending(now) {
             Ok(invoices) => invoices,
             Err(e) => {
