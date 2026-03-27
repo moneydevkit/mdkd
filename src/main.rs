@@ -3,6 +3,7 @@ mod config;
 mod event_loop;
 mod expiry;
 mod mdk;
+mod secret;
 mod store;
 mod time;
 mod types;
@@ -36,6 +37,16 @@ use crate::store::invoice_metadata::InvoiceMetadataStore;
 struct Args {
     #[arg(help = "Path to config.toml")]
     config_file: String,
+    #[arg(long)]
+    mnemonic_fd: Option<i32>,
+    #[arg(long)]
+    webhook_secret_fd: Option<i32>,
+    #[arg(long)]
+    password_full_fd: Option<i32>,
+    #[arg(long)]
+    password_read_only_fd: Option<i32>,
+    #[arg(long)]
+    access_token_fd: Option<i32>,
 }
 
 fn main() {
@@ -62,18 +73,24 @@ fn main() {
         }
     };
 
-    // Validate all required env vars up front, before logger init.
+    // Resolve secrets: FD flags take precedence, env vars as fallback.
+    let resolve = |name, fd| {
+        secret::try_resolve(name, fd).unwrap_or_else(|e| {
+            eprintln!("{e}");
+            std::process::exit(1);
+        })
+    };
     let webhook_secret = {
-        let hex_str = require_env("MDK_WEBHOOK_SECRET");
+        let hex_str = resolve("MDK_WEBHOOK_SECRET", args.webhook_secret_fd);
         Vec::<u8>::from_hex(&hex_str).unwrap_or_else(|e| {
             eprintln!("Invalid MDK_WEBHOOK_SECRET hex: {e}");
             std::process::exit(1);
         })
     };
-    let full_password = require_env("MDK_HTTP_PASSWORD_FULL");
-    let read_only_password = require_env("MDK_HTTP_PASSWORD_READ_ONLY");
-    let mnemonic_phrase = require_env("MDK_MNEMONIC");
-    let mdk_access_token = require_env("MDK_ACCESS_TOKEN");
+    let full_password = resolve("MDK_HTTP_PASSWORD_FULL", args.password_full_fd);
+    let read_only_password = resolve("MDK_HTTP_PASSWORD_READ_ONLY", args.password_read_only_fd);
+    let mnemonic_phrase = resolve("MDK_MNEMONIC", args.mnemonic_fd);
+    let mdk_access_token = resolve("MDK_ACCESS_TOKEN", args.access_token_fd);
 
     let storage_dir: PathBuf = match config_file.storage_dir_path {
         None => match get_default_data_dir() {
@@ -323,11 +340,4 @@ fn main() {
 
     node.stop().expect("Shutdown should always succeed.");
     info!("Shutdown complete.");
-}
-
-fn require_env(name: &str) -> String {
-    std::env::var(name).unwrap_or_else(|_| {
-        eprintln!("{name} environment variable is required");
-        std::process::exit(1);
-    })
 }
