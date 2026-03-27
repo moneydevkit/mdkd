@@ -8,18 +8,28 @@ use crate::types::GetBalanceResponse;
 
 /// Returns the node's Lightning and on-chain balances.
 ///
-/// `balance_sat`: Total sats owned across all Lightning channels. Uses
-/// `total_lightning_balance_sats` which sums our side of every channel's
-/// commitment regardless of peer connectivity or channel usability. This
-/// means the balance stays stable even if the LSP goes offline. It reflects
-/// ownership, not what can be routed at this instant.
+/// `balance_sat` sums `outbound_capacity_msat` across all channels.
+/// This reflects what the user can actually spend over Lightning right now.
 ///
-/// `onchain_balance_sat`: Spendable on-chain sats.
+/// Known limitation: `outbound_capacity_msat` drops to zero when the peer
+/// is disconnected. A proper ownership balance would require a field LDK
+/// doesn't currently expose on `ChannelDetails`.
+///
+/// We intentionally avoid `total_lightning_balance_sats` because it reports
+/// force-close claimable amounts (after on-chain fees and reserves), which
+/// can be zero even when the channel has a real outbound balance.
+///
+/// `onchain_balance_sat` is what the user can actually sweep/send on-chain right now.
 pub async fn handle_get_balance(node: Arc<Node>) -> Result<Json<GetBalanceResponse>, AppError> {
     let balances = node.list_balances();
+    let lightning_sat: u64 = node
+        .list_channels()
+        .iter()
+        .map(|ch| ch.outbound_capacity_msat / 1000)
+        .sum();
 
     Ok(Json(GetBalanceResponse {
-        balance_sat: balances.total_lightning_balance_sats,
+        balance_sat: lightning_sat,
         onchain_balance_sat: balances.spendable_onchain_balance_sats,
     }))
 }

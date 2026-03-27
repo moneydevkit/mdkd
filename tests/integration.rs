@@ -348,6 +348,61 @@ async fn test_getbalance_after_payment() {
     );
 }
 
+/// Regression test: total_lightning_balance_sats reports 0 for sub-dust
+/// balances because the force-close claimable output would be dust.
+/// outbound_capacity_msat still reflects the real spendable amount.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_getbalance_small_payment() {
+    let bitcoind = TestBitcoind::new();
+    let lsp = LspNode::new(&bitcoind);
+    fund_lsp(&bitcoind, &lsp).await;
+
+    let server = MdkServerHandle::start(&bitcoind, None, Some(&lsp), TEST_MNEMONIC).await;
+    let payer = PayerNode::new(&bitcoind);
+    setup_payer_lsp_channel(&bitcoind, &payer, &lsp, 500_000).await;
+
+    let invoice: serde_json::Value = server
+        .post_form(
+            "/createinvoice",
+            &[
+                ("amountSat", "100"),
+                ("description", "dust balance regression"),
+                ("expirySeconds", "3600"),
+            ],
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let invoice_str = invoice["serialized"].as_str().unwrap();
+    let payment_hash = invoice["paymentHash"].as_str().unwrap().to_string();
+
+    payer.pay_invoice(invoice_str);
+
+    let start = std::time::Instant::now();
+    loop {
+        let resp: serde_json::Value = server
+            .get(&format!("/payments/incoming/{payment_hash}"))
+            .await
+            .json()
+            .await
+            .unwrap();
+        if resp["isPaid"].as_bool().unwrap() {
+            break;
+        }
+        if start.elapsed() > Duration::from_secs(60) {
+            panic!("Timed out waiting for payment to settle");
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+
+    let resp: serde_json::Value = server.get("/getbalance").await.json().await.unwrap();
+    assert!(
+        resp["balanceSat"].as_u64().unwrap() > 0,
+        "Balance should be nonzero even for sub-dust amounts, got: {resp}"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn test_jit_channel_invoice() {
     let bitcoind = TestBitcoind::new();
