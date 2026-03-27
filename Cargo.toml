@@ -3,6 +3,9 @@ name = "mdk-server"
 version = "0.0.1"
 edition = "2021"
 
+[features]
+demo = []
+
 [dependencies]
 ldk-server = { git = "https://github.com/moneydevkit/ldk-server", rev = "44178d75d509b0156c9e371e190292b3f4930f18" }
 ldk-server-protos = { git = "https://github.com/moneydevkit/ldk-server", rev = "44178d75d509b0156c9e371e190292b3f4930f18" }

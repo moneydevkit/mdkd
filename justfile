@@ -88,7 +88,7 @@ dev: dev-config
     : "${MDK_HTTP_PASSWORD_FULL:?set MDK_HTTP_PASSWORD_FULL in .env}"
     : "${MDK_HTTP_PASSWORD_READ_ONLY:?set MDK_HTTP_PASSWORD_READ_ONLY in .env}"
     export MDK_MNEMONIC="abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
-    cargo run -- config.toml
+    cargo run --features demo -- config.toml
 
 # Run mdk-server against staging (mutinynet + staging.moneydevkit.com)
 dev-staging: dev-staging-config
@@ -101,7 +101,7 @@ dev-staging: dev-staging-config
     : "${MDK_WEBHOOK_SECRET:?set MDK_WEBHOOK_SECRET in .env}"
     : "${MDK_MNEMONIC:?set MDK_MNEMONIC in .env}"
     export MDK_API_BASE_URL="${MDK_API_BASE_URL:-https://staging.moneydevkit.com/rpc}"
-    cargo run -- config.toml
+    cargo run --features demo -- config.toml
 
 # Generate config.toml + .env for staging (esplora, no local bitcoind needed)
 dev-staging-config:

@@ -98,13 +98,21 @@ pub fn router(state: AppState) -> Router {
         event_tx: state.event_tx.clone(),
     };
 
-    router
-        .merge(Scalar::with_url("/scalar", api))
-        .route(
-            "/websocket",
-            axum::routing::get(websocket::handler).with_state(ws_state),
+    let router = router.merge(Scalar::with_url("/scalar", api)).route(
+        "/websocket",
+        axum::routing::get(websocket::handler).with_state(ws_state),
+    );
+
+    #[cfg(feature = "demo")]
+    let router = {
+        const DEMO_HTML: &str = include_str!("../../wallet.html");
+        router.route(
+            "/",
+            axum::routing::get(|| async { axum::response::Html(DEMO_HTML) }),
         )
-        .with_state(state)
+    };
+
+    router.with_state(state)
 }
 
 // -- Handlers -----------------------------------------------------------------
