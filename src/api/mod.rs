@@ -6,12 +6,14 @@ pub mod error;
 pub mod info;
 pub mod invoices;
 pub mod onchain;
+pub mod websocket;
 
 use std::sync::Arc;
 
 use axum::extract::{Path, Query, State};
 use axum::{middleware, Form, Json, Router};
 use ldk_server::ldk_node::Node;
+use tokio::sync::broadcast;
 use utoipa::openapi::security::{Http, HttpAuthScheme, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 use utoipa_axum::router::OpenApiRouter;
@@ -36,6 +38,7 @@ pub struct AppState {
     pub metadata_store: Arc<InvoiceMetadataStore>,
     pub http_auth: HttpAuth,
     pub mdk_client: Arc<MdkApiClient>,
+    pub event_tx: broadcast::Sender<String>,
 }
 
 #[derive(OpenApi)]
@@ -90,8 +93,17 @@ pub fn router(state: AppState) -> Router {
         ))
         .split_for_parts();
 
+    let ws_state = websocket::WsState {
+        auth: state.http_auth.clone(),
+        event_tx: state.event_tx.clone(),
+    };
+
     router
         .merge(Scalar::with_url("/scalar", api))
+        .route(
+            "/websocket",
+            axum::routing::get(websocket::handler).with_state(ws_state),
+        )
         .with_state(state)
 }
 

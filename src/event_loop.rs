@@ -11,6 +11,7 @@ use ldk_server::ldk_node::{Event, Node};
 use ldk_server::util::proto_adapter::{forwarded_payment_to_proto, payment_to_proto};
 use log::{error, info};
 use prost::Message;
+use tokio::sync::broadcast;
 
 use crate::mdk::client::MdkApiClient;
 use crate::mdk::types::{PaymentEntry, PaymentReceivedRequest};
@@ -26,6 +27,7 @@ pub async fn run_event_loop(
     webhook_secret: Vec<u8>,
     http_client: reqwest::Client,
     mdk_client: Arc<MdkApiClient>,
+    event_tx: broadcast::Sender<String>,
 ) {
     loop {
         let event = node.next_event_async().await;
@@ -75,13 +77,20 @@ pub async fn run_event_loop(
                             error!("Failed to mark payment paid: {e}");
                         }
 
+                        // Build the event once: used for both WS broadcast and webhook.
+                        let event = WebhookEvent::PaymentReceived {
+                            payment_hash: hash_str.clone(),
+                            amount_msat,
+                            external_id: metadata.external_id.clone(),
+                            timestamp: time::seconds_since_epoch(),
+                        };
+
+                        // Broadcast to WebSocket subscribers (ignore if no receivers).
+                        if let Ok(json) = serde_json::to_string(&event) {
+                            let _ = event_tx.send(json);
+                        }
+
                         if let Some(webhook_url) = metadata.webhook_url {
-                            let event = WebhookEvent::PaymentReceived {
-                                payment_hash: hash_str.clone(),
-                                amount_msat,
-                                external_id: metadata.external_id.clone(),
-                                timestamp: time::seconds_since_epoch(),
-                            };
                             spawn_webhook_delivery(
                                 http_client.clone(),
                                 webhook_url,

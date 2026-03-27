@@ -26,6 +26,7 @@ use ldk_server::util::config::{get_default_data_dir, load_config, ChainSource};
 use ldk_server::util::logger::ServerLogger;
 use log::{error, info};
 use tokio::signal::unix::SignalKind;
+use tokio::sync::broadcast;
 
 use crate::api::{AppState, HttpAuth};
 use crate::config::NetworkInfra;
@@ -267,6 +268,7 @@ fn main() {
         };
 
         let http_client = reqwest::Client::new();
+        let (event_tx, _) = broadcast::channel::<String>(128);
 
         let app_state = AppState {
             node: Arc::clone(&node),
@@ -276,6 +278,7 @@ fn main() {
                 read_only_password: read_only_password.clone(),
             },
             mdk_client: mdk_client.clone(),
+            event_tx: event_tx.clone(),
         };
 
         let app = api::router(app_state);
@@ -313,6 +316,7 @@ fn main() {
                 event_secret,
                 event_client,
                 event_mdk_client,
+                event_tx,
             )
             .await;
         });

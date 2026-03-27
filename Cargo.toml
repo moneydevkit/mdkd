@@ -7,7 +7,7 @@ edition = "2021"
 ldk-server = { git = "https://github.com/moneydevkit/ldk-server", rev = "44178d75d509b0156c9e371e190292b3f4930f18" }
 ldk-server-protos = { git = "https://github.com/moneydevkit/ldk-server", rev = "44178d75d509b0156c9e371e190292b3f4930f18" }
 
-axum = { version = "0.8", features = ["json"] }
+axum = { version = "0.8", features = ["json", "ws"] }
 utoipa = { version = "5.4", features = ["axum_extras"] }
 utoipa-axum = "0.2"
 utoipa-scalar = { version = "0.3", features = ["axum"] }
@@ -28,7 +28,9 @@ time = { version = "0.3", features = ["formatting"] }
 
 [dev-dependencies]
 corepc-node = { version = "0.10", features = ["29_0"] }
+futures-util = "0.3"
 http-body-util = "0.1.3"
 ldk-node-lsp = { package = "ldk-node", git = "https://github.com/moneydevkit/ldk-node", rev = "e5fcce065fa97c522de0f8fec87beb9e7e541456" }
 tempfile = "3"
+tokio-tungstenite = "0.26"
 tower = "0.5.3"
