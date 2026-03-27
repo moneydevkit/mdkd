@@ -279,6 +279,7 @@ fn main() {
         };
 
         let app = api::router(app_state);
+
         let listener = match tokio::net::TcpListener::bind(bind_addr).await {
             Ok(l) => l,
             Err(e) => {

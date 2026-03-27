@@ -1,12 +1,13 @@
 use ldk_server::ldk_node::ChannelDetails;
 use serde::{Deserialize, Serialize};
+use utoipa::{IntoParams, ToSchema};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct DecodeInvoiceRequest {
     pub invoice: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DecodeInvoiceResponse {
     pub amount: Option<u64>,
@@ -22,13 +23,13 @@ pub struct DecodeInvoiceResponse {
     pub features: Vec<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RoutingHint {
     pub hops: Vec<RoutingHintHop>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RoutingHintHop {
     pub node_id: String,
@@ -38,12 +39,12 @@ pub struct RoutingHintHop {
     pub cltv_expiry_delta: u16,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct DecodeOfferRequest {
     pub offer: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DecodeOfferResponse {
     pub offer_id: String,
@@ -55,7 +56,7 @@ pub struct DecodeOfferResponse {
     pub features: Vec<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateInvoiceRequest {
     pub amount_sat: Option<u64>,
@@ -74,7 +75,7 @@ pub struct CreateInvoiceRequest {
     pub customer_external_id: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateInvoiceResponse {
     pub amount_sat: Option<u64>,
@@ -84,7 +85,8 @@ pub struct CreateInvoiceResponse {
     pub checkout_id: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema, IntoParams)]
+#[into_params(parameter_in = Query)]
 #[serde(rename_all = "camelCase")]
 pub struct ListPaymentsRequest {
     pub from: Option<u64>,
@@ -97,7 +99,7 @@ pub struct ListPaymentsRequest {
 
 /// All timestamps are unix epoch **seconds** — BOLT11 expiry and LDK's
 /// `latest_update_timestamp` are seconds-precision.
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct IncomingPaymentResponse {
     pub payment_hash: String,
@@ -115,7 +117,7 @@ pub struct IncomingPaymentResponse {
     pub expires_at: Option<u64>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GetBalanceResponse {
     pub balance_sat: u64,
@@ -123,7 +125,7 @@ pub struct GetBalanceResponse {
     pub onchain_balance_sat: u64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GetInfoResponse {
     pub node_id: String,
@@ -133,7 +135,7 @@ pub struct GetInfoResponse {
     pub version: &'static str,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ChannelInfo {
     pub state: ChannelState,
@@ -166,7 +168,7 @@ impl From<&ChannelDetails> for ChannelInfo {
 /// LDK removes closing/closed channels from `list_channels()`, so those
 /// states never appear here. `Offline` means the channel exists but the
 /// peer is disconnected (not closing).
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ChannelState {
     Online,
@@ -201,7 +203,7 @@ impl WebhookEvent {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SendToAddressRequest {
     pub address: String,
@@ -209,13 +211,13 @@ pub struct SendToAddressRequest {
     pub feerate_sat_byte: Option<u64>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CloseChannelRequest {
     pub channel_id: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiError {
     pub error: String,

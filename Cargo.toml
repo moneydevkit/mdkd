@@ -1,6 +1,6 @@
 [package]
 name = "mdk-server"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
 
 [dependencies]
@@ -8,6 +8,9 @@ ldk-server = { git = "https://github.com/moneydevkit/ldk-server", rev = "44178d7
 ldk-server-protos = { git = "https://github.com/moneydevkit/ldk-server", rev = "44178d75d509b0156c9e371e190292b3f4930f18" }
 
 axum = { version = "0.8", features = ["json"] }
+utoipa = { version = "5.4", features = ["axum_extras"] }
+utoipa-axum = "0.2"
+utoipa-scalar = { version = "0.3", features = ["axum"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -1061,6 +1061,29 @@ async fn test_sendtoaddress_success() {
     }
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn test_openapi_scalar() {
+    let bitcoind = TestBitcoind::new();
+    let server = MdkServerHandle::start(&bitcoind, None, None, TEST_MNEMONIC).await;
+
+    // /scalar is outside the auth middleware — no credentials needed.
+    let resp = reqwest::Client::new()
+        .get(format!("{}/scalar", server.base_url()))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    let html = resp.text().await.unwrap();
+    assert!(html.contains("<!doctype html>") || html.contains("<!DOCTYPE html>"));
+
+    // Verify the security scheme is present.
+    assert!(
+        html.contains("basic_auth"),
+        "Missing basic_auth security scheme"
+    );
+}
+
 // Spec test vector: offer with description + issuer + nodeId.
 const BOLT12_OFFER: &str =
     "lno1pgx9getnwss8vetrw3hhyucjy358garswvaz7tmzdak8gvfj9ehhyeeqgf85c4p3xgsxjmnyw4ehgunfv4e3vggzamrjghtt05kvkvpcp0a79gmy3nt6jsn98ad2xs8de6sl9qmgvcvs";
