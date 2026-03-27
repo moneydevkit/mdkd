@@ -9,16 +9,22 @@ pub mod onchain;
 
 use std::sync::Arc;
 
-use axum::extract::State;
-use axum::middleware;
+use axum::extract::{Path, Query, State};
 use axum::routing::{get, post};
 use axum::Router;
+use axum::{middleware, Form, Json};
 use ldk_server::ldk_node::Node;
 
 pub use auth::HttpAuth;
 
+use crate::api::error::AppError;
 use crate::mdk::client::MdkApiClient;
 use crate::store::invoice_metadata::InvoiceMetadataStore;
+use crate::types::{
+    ChannelInfo, CloseChannelRequest, CreateInvoiceRequest, DecodeInvoiceRequest,
+    DecodeInvoiceResponse, DecodeOfferRequest, DecodeOfferResponse, GetBalanceResponse,
+    GetInfoResponse, IncomingPaymentResponse, ListPaymentsRequest, SendToAddressRequest,
+};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -58,65 +64,59 @@ pub fn router(state: AppState) -> Router {
 
 async fn create_invoice(
     State(state): State<AppState>,
-    axum::Form(req): axum::Form<crate::types::CreateInvoiceRequest>,
-) -> Result<axum::Json<crate::types::CreateInvoiceResponse>, error::AppError> {
+    Form(req): Form<CreateInvoiceRequest>,
+) -> Result<Json<crate::types::CreateInvoiceResponse>, AppError> {
     invoices::handle_create_invoice(state.node, state.metadata_store, state.mdk_client, &req).await
 }
 
 async fn get_incoming_payment(
     State(state): State<AppState>,
-    path: axum::extract::Path<String>,
-) -> Result<axum::Json<crate::types::IncomingPaymentResponse>, error::AppError> {
+    path: Path<String>,
+) -> Result<Json<IncomingPaymentResponse>, AppError> {
     invoices::handle_get_incoming_payment(state.node, state.metadata_store, path).await
 }
 
 async fn list_incoming_payments(
     State(state): State<AppState>,
-    axum::extract::Query(params): axum::extract::Query<crate::types::ListPaymentsRequest>,
-) -> Result<axum::Json<Vec<crate::types::IncomingPaymentResponse>>, error::AppError> {
+    Query(params): Query<ListPaymentsRequest>,
+) -> Result<Json<Vec<IncomingPaymentResponse>>, AppError> {
     invoices::handle_list_incoming_payments(state.node, state.metadata_store, &params).await
 }
 
-async fn get_info(
-    State(state): State<AppState>,
-) -> Result<axum::Json<crate::types::GetInfoResponse>, error::AppError> {
+async fn get_info(State(state): State<AppState>) -> Result<Json<GetInfoResponse>, AppError> {
     info::handle_get_info(state.node).await
 }
 
-async fn get_balance(
-    State(state): State<AppState>,
-) -> Result<axum::Json<crate::types::GetBalanceResponse>, error::AppError> {
+async fn get_balance(State(state): State<AppState>) -> Result<Json<GetBalanceResponse>, AppError> {
     balance::handle_get_balance(state.node).await
 }
 
 async fn decode_invoice(
-    axum::Form(req): axum::Form<crate::types::DecodeInvoiceRequest>,
-) -> Result<axum::Json<crate::types::DecodeInvoiceResponse>, error::AppError> {
+    Form(req): Form<DecodeInvoiceRequest>,
+) -> Result<Json<DecodeInvoiceResponse>, AppError> {
     decode::handle_decode_invoice(&req)
 }
 
-async fn list_channels(
-    State(state): State<AppState>,
-) -> Result<axum::Json<Vec<crate::types::ChannelInfo>>, error::AppError> {
+async fn list_channels(State(state): State<AppState>) -> Result<Json<Vec<ChannelInfo>>, AppError> {
     channels::handle_list_channels(state.node).await
 }
 
 async fn close_channel(
     State(state): State<AppState>,
-    axum::Form(req): axum::Form<crate::types::CloseChannelRequest>,
-) -> Result<axum::http::StatusCode, error::AppError> {
+    Form(req): Form<CloseChannelRequest>,
+) -> Result<axum::http::StatusCode, AppError> {
     channels::handle_close_channel(state.node, &req).await
 }
 
 async fn send_to_address(
     State(state): State<AppState>,
-    axum::Form(req): axum::Form<crate::types::SendToAddressRequest>,
-) -> Result<String, error::AppError> {
+    Form(req): Form<SendToAddressRequest>,
+) -> Result<String, AppError> {
     onchain::handle_send_to_address(state.node, &req).await
 }
 
 async fn decode_offer(
-    axum::Form(req): axum::Form<crate::types::DecodeOfferRequest>,
-) -> Result<axum::Json<crate::types::DecodeOfferResponse>, error::AppError> {
+    Form(req): Form<DecodeOfferRequest>,
+) -> Result<Json<DecodeOfferResponse>, AppError> {
     decode::handle_decode_offer(&req)
 }
