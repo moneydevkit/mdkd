@@ -203,7 +203,7 @@ e2e: dev-clean
     #!/usr/bin/env bash
     set -euo pipefail
     amount_msat=100000
-    mdk_url="http://localhost:3900"
+    mdk_url="http://127.0.0.1:3900"
     mdk_rpc="$mdk_url/rpc"
 
     cleanup() {
@@ -212,8 +212,22 @@ e2e: dev-clean
         kill "$SERVER_PID" 2>/dev/null || true
         wait "$SERVER_PID" 2>/dev/null || true
       fi
+      if [ -n "${PROXY_PID:-}" ]; then
+        echo "==> Stopping SOCKS5 proxy (pid $PROXY_PID)..."
+        kill "$PROXY_PID" 2>/dev/null || true
+        wait "$PROXY_PID" 2>/dev/null || true
+      fi
     }
     trap cleanup EXIT
+
+    # ---------------------------------------------------------------
+    # SOCKS5 proxy
+    # ---------------------------------------------------------------
+    socks_port=1080
+    socks_log=$(mktemp)
+    echo "==> Starting SOCKS5 proxy on port $socks_port (log: $socks_log)..."
+    microsocks -p "$socks_port" 2>"$socks_log" &
+    PROXY_PID=$!
 
     # ---------------------------------------------------------------
     # MDK account provisioning
@@ -299,9 +313,9 @@ e2e: dev-clean
     # ---------------------------------------------------------------
     # Run
     # ---------------------------------------------------------------
-    echo "==> Starting mdk-server..."
+    echo "==> Starting mdk-server (via SOCKS5 proxy on port $socks_port)..."
     export MDK_MNEMONIC="${MDK_MNEMONIC:-abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about}"
-    cargo run --quiet -- config.toml &
+    cargo run --quiet -- --socks-proxy "socks5://127.0.0.1:$socks_port" config.toml &
     SERVER_PID=$!
 
     echo -n "==> Waiting for API to be ready"
@@ -405,6 +419,54 @@ e2e: dev-clean
     else
       echo ""
       echo "==> FAIL: not all checkouts marked as paid"
+      exit 1
+    fi
+
+    # ---------------------------------------------------------------
+    # Verify SOCKS5 proxy was actually in the path
+    # ---------------------------------------------------------------
+    echo ""
+    echo "==> SOCKS5 proxy log:"
+    cat "$socks_log"
+
+    echo ""
+    echo "==> Verifying traffic went through SOCKS5 proxy..."
+
+    # Check that the proxy saw HTTP traffic to the MDK API.
+    if grep -q "127.0.0.1.*3900" "$socks_log"; then
+      echo "  HTTP traffic to MDK API (port 3900): PASS"
+    else
+      echo "  HTTP traffic to MDK API (port 3900): FAIL"
+      echo "  (no proxy log entries for MDK API)"
+      exit 1
+    fi
+
+    # Check that the proxy saw Lightning peer traffic to the LSP.
+    lsp_port=$(echo "$MDK_LSP_ADDRESS" | cut -d: -f2)
+    if grep -q "$lsp_port" "$socks_log"; then
+      echo "  Lightning peer traffic to LSP (port $lsp_port): PASS"
+    else
+      echo "  Lightning peer traffic to LSP (port $lsp_port): FAIL"
+      echo "  (no proxy log entries for LSP peer connection)"
+      exit 1
+    fi
+
+    # Kill the proxy and confirm mdk-server can no longer reach the API.
+    kill "$PROXY_PID" 2>/dev/null || true
+    wait "$PROXY_PID" 2>/dev/null || true
+    PROXY_PID=""
+    sleep 0.5
+    rm -f "$socks_log"
+
+    resp=$(curl -sS -w '\n%{http_code}' http://127.0.0.1:8081/createinvoice \
+      -u ":$http_pw" \
+      -d "amountSat=100&description=proxy-verify&expirySeconds=60")
+    code=$(echo "$resp" | tail -1)
+    if [ "$code" -ge 400 ] 2>/dev/null; then
+      echo "  proxy-killed request failed (HTTP $code): PASS"
+    else
+      echo "  proxy-killed request succeeded (HTTP $code): FAIL"
+      echo "  (traffic was NOT going through the proxy!)"
       exit 1
     fi
 

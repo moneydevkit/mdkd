@@ -160,6 +160,7 @@
             grpcurl
             jq
             unixtools.xxd
+            microsocks
           ];
 
           env = {

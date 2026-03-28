@@ -9,6 +9,7 @@ mod time;
 mod types;
 mod webhook;
 
+use std::net::ToSocketAddrs;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -25,6 +26,7 @@ use ldk_server::ldk_node::Builder;
 use ldk_server::util::config::{get_default_data_dir, load_config, ChainSource};
 use ldk_server::util::logger::ServerLogger;
 use log::{error, info};
+use reqwest::{Client, Proxy};
 use tokio::signal::unix::SignalKind;
 use tokio::sync::broadcast;
 
@@ -36,18 +38,26 @@ use crate::store::invoice_metadata::InvoiceMetadataStore;
 #[derive(Parser)]
 #[command(version, about = "MDK Server")]
 struct Args {
-    #[arg(help = "Path to config.toml")]
+    /// Path to config.toml
     config_file: String,
+    /// Read wallet mnemonic from this file descriptor
     #[arg(long)]
     mnemonic_fd: Option<i32>,
+    /// Read webhook HMAC secret (hex) from this file descriptor
     #[arg(long)]
     webhook_secret_fd: Option<i32>,
+    /// Read full-access HTTP password from this file descriptor
     #[arg(long)]
     password_full_fd: Option<i32>,
+    /// Read read-only HTTP password from this file descriptor
     #[arg(long)]
     password_read_only_fd: Option<i32>,
+    /// Read MDK platform access token from this file descriptor
     #[arg(long)]
     access_token_fd: Option<i32>,
+    /// Route all outbound traffic through a SOCKS5 proxy (e.g. socks5://127.0.0.1:1080)
+    #[arg(long)]
+    socks_proxy: Option<String>,
 }
 
 fn main() {
@@ -125,6 +135,31 @@ fn main() {
         }
     };
 
+    // Optional SOCKS5 proxy for all outbound traffic.
+    let socks_proxy_url = args.socks_proxy;
+    let socks_proxy_addr = socks_proxy_url.as_ref().map(|raw| {
+        // Expected format: socks5://host:port — strip the scheme and resolve.
+        let host_port = raw
+            .strip_prefix("socks5://")
+            .or_else(|| raw.strip_prefix("socks5h://"))
+            .unwrap_or_else(|| {
+                eprintln!("SOCKS5 proxy url must start with socks5:// or socks5h://");
+                std::process::exit(1);
+            });
+        host_port
+            .to_socket_addrs()
+            .ok()
+            .and_then(|mut addrs| addrs.next())
+            .unwrap_or_else(|| {
+                eprintln!("cannot resolve SOCKS5 proxy {}", host_port);
+                std::process::exit(1);
+            })
+    });
+
+    if let Some(ref url) = socks_proxy_url {
+        info!("SOCKS5 proxy enabled: {}", url);
+    }
+
     let ldk_node_config = LdkNodeConfig {
         storage_dir_path: network_dir.to_str().unwrap().to_string(),
         listening_addresses: config_file.listening_addrs,
@@ -135,6 +170,10 @@ fn main() {
 
     let mut builder = Builder::from_config(ldk_node_config);
     builder.set_log_facade_logger();
+
+    if let Some(addr) = socks_proxy_addr {
+        builder.set_socks5_proxy(addr);
+    }
 
     if let Some(alias) = config_file.alias {
         if let Err(e) = builder.set_node_alias(alias.to_string()) {
@@ -222,9 +261,28 @@ fn main() {
         }
     };
 
+    let http_client = {
+        let mut b = Client::builder();
+        if let Some(ref proxy_url) = socks_proxy_url {
+            let proxy = Proxy::all(proxy_url).unwrap_or_else(|e| {
+                error!("Invalid SOCKS5 proxy for reqwest: {e}");
+                std::process::exit(1);
+            });
+            b = b.proxy(proxy);
+        }
+        b.build().unwrap_or_else(|e| {
+            error!("Failed to build reqwest client: {e}");
+            std::process::exit(1);
+        })
+    };
+
     let base_url = infra.mdk_api_base_url().to_string();
     info!("MDK platform integration enabled ({})", base_url);
-    let mdk_client = Arc::new(MdkApiClient::new(base_url, mdk_access_token));
+    let mdk_client = Arc::new(MdkApiClient::new(
+        http_client.clone(),
+        base_url,
+        mdk_access_token,
+    ));
 
     info!("Starting up...");
     match node.start() {
@@ -267,7 +325,6 @@ fn main() {
             }
         };
 
-        let http_client = reqwest::Client::new();
         let (event_tx, _) = broadcast::channel::<String>(128);
 
         let app_state = AppState {

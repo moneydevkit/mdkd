@@ -29,9 +29,9 @@ struct OrpcResponse<T> {
 }
 
 impl MdkApiClient {
-    pub fn new(base_url: String, access_token: String) -> Self {
+    pub fn new(http: reqwest::Client, base_url: String, access_token: String) -> Self {
         Self {
-            http: reqwest::Client::new(),
+            http,
             base_url,
             access_token,
         }
