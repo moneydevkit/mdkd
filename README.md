@@ -1,7 +1,7 @@
 # mdkd
 
 Lightning payment server built on LDK. Connects to the MoneyDevKit platform
-for checkout management and uses LSPS4 for JIT channel liquidity.
+for checkout management.
 
 ## Building from source
 
@@ -139,19 +139,6 @@ checked. If neither is present the process exits with an error.
 | `--password-read-only-fd N` | `MDK_HTTP_PASSWORD_READ_ONLY` | HTTP Basic Auth password granting read-only access (node info, invoice lookup). You choose this value. |
 | `--webhook-secret-fd N` | `MDK_WEBHOOK_SECRET` | Hex-encoded secret for HMAC-signing outgoing webhook payloads. Must be valid hex, any length. |
 
-#### Regtest only
-
-| Variable | Description |
-|----------|-------------|
-| `MDK_LSP_NODE_ID` | Public key of the MoneyDevKit lightning node. |
-| `MDK_LSP_ADDRESS` | `host:port` of the MoneyDevKit lightning P2P socket. |
-| `MDK_API_BASE_URL` | Base URL of the MoneyDevKit RPC API (e.g. `http://localhost:3900/rpc`). |
-| `MDK_BITCOIND_RPC_HOST` | Hostname of the bitcoind RPC server. |
-| `MDK_BITCOIND_RPC_PORT` | Port of the bitcoind RPC server. |
-| `MDK_BITCOIND_RPC_USER` | Bitcoind RPC username. |
-| `MDK_BITCOIND_RPC_PASSWORD` | Bitcoind RPC password. |
-| `MDK_VSS_URL` | URL of the VSS instance (e.g. `http://localhost:8080/vss`). |
-
 ### Generating secrets
 
 **MDK_ACCESS_TOKEN** -- sign in to [moneydevkit.com](https://moneydevkit.com),
@@ -185,12 +172,10 @@ openssl rand -hex 32
 
 ### Supported networks
 
-| Network | LSP + chain source | VSS |
-|---------|-------------------|-----|
-| `bitcoin` (mainnet) | Hard-coded | Hard-coded |
-| `signet` (mutinynet) | Hard-coded | Hard-coded |
-| `regtest` | Env vars | `MDK_VSS_URL` env var |
-| `testnet` | Not yet supported | -- |
+| Network |
+|---------|
+| `bitcoin` (mainnet) |
+| `signet` (mutinynet) |
 
 ## Storage
 
@@ -231,30 +216,6 @@ updated when the tag is the highest semver.
 
 ## Local development
 
-Enter the dev shell with `nix develop` (or use direnv). This gives you the
-Rust toolchain, cargo-nextest, protobuf, and the `just` recipes below.
-
 ```
-just check        # fmt + clippy + unit tests (nix-based)
-just fmt          # cargo fmt + nixfmt
-just clippy       # cargo clippy via nix
-just unit-test    # unit tests via nix
-just test         # cargo nextest (all tests)
-just build-static # musl static binary
-just build-image  # nix docker image, loaded into local docker
-just clean        # cargo clean
-```
-
-### Running against the LSP stack
-
-Full local development (regtest, e2e tests) requires the
-private LSP docker-compose stack.
-
-```
-just dev          # regtest against local lightning-node stack
 just dev-staging  # signet against staging.moneydevkit.com
-just e2e          # full end-to-end test
 ```
-
-`just dev-config` writes `config.toml` and `.env` from the running
-docker-compose stack. `just dev` calls it automatically.
