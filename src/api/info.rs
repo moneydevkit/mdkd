@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use axum::Json;
-use ldk_server::ldk_node::bitcoin::Network;
-use ldk_server::ldk_node::Node;
+use ldk_node::bitcoin::Network;
+use ldk_node::Node;
 
 use crate::api::error::AppError;
 use crate::types::{ChannelInfo, GetInfoResponse};

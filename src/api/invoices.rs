@@ -3,15 +3,14 @@ use std::sync::Arc;
 
 use axum::extract::Path;
 use axum::Json;
+use chrono::{DateTime, SecondsFormat};
 use hex::FromHex;
-use ldk_server::ldk_node::bitcoin::hashes::sha256;
-use ldk_server::ldk_node::bitcoin::hashes::Hash as _;
-use ldk_server::ldk_node::lightning::ln::channelmanager::PaymentId;
-use ldk_server::ldk_node::lightning_invoice::{
-    Bolt11Invoice, Bolt11InvoiceDescription, Description, Sha256,
-};
-use ldk_server::ldk_node::payment::{PaymentDetails, PaymentKind, PaymentStatus};
-use ldk_server::ldk_node::Node;
+use ldk_node::bitcoin::hashes::sha256;
+use ldk_node::bitcoin::hashes::Hash as _;
+use ldk_node::lightning::ln::channelmanager::PaymentId;
+use ldk_node::lightning_invoice::{Bolt11Invoice, Bolt11InvoiceDescription, Description, Sha256};
+use ldk_node::payment::{PaymentDetails, PaymentKind, PaymentStatus};
+use ldk_node::Node;
 use log::{error, info};
 
 use crate::api::error::AppError;
@@ -155,11 +154,9 @@ async fn create_with_checkout(
     let payment_hash = invoice.payment_hash().to_string();
     let expires_at_iso = invoice
         .expires_at()
-        .map(|d| {
-            let dt = time::OffsetDateTime::from_unix_timestamp(d.as_secs() as i64)
-                .expect("valid timestamp");
-            dt.format(&time::format_description::well_known::Rfc3339)
-                .expect("valid rfc3339")
+        .and_then(|d| {
+            DateTime::from_timestamp(d.as_secs() as i64, 0)
+                .map(|dt| dt.to_rfc3339_opts(SecondsFormat::Secs, true))
         })
         .unwrap_or_default();
 
@@ -333,8 +330,8 @@ fn extract_preimage(kind: &PaymentKind) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ldk_server::ldk_node::lightning::types::payment::{PaymentHash, PaymentPreimage};
-    use ldk_server::ldk_node::payment::PaymentDirection;
+    use ldk_node::lightning::types::payment::{PaymentHash, PaymentPreimage};
+    use ldk_node::payment::PaymentDirection;
 
     fn test_metadata() -> InvoiceMetadata {
         InvoiceMetadata {

@@ -424,8 +424,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c673075a2e0e5f4a1dde27ce9dee1ea4558c7ffe648f576438a20ca1d2acc4b0"
 dependencies = [
  "iana-time-zone",
+ "js-sys",
  "num-traits",
  "serde",
+ "wasm-bindgen",
  "windows-link",
 ]
 
@@ -550,15 +552,6 @@ name = "data-encoding"
 version = "2.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7a1e2f27636f116493b8b860f5546edb47c8d8f8ea73e1d2a20be88e28d1fea"
-
-[[package]]
-name = "deranged"
-version = "0.5.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7cd812cc2bc1d69d4764bd80df88b4317eaef9e773c75226407d9bc0876b211c"
-dependencies = [
- "powerfmt",
-]
 
 [[package]]
 name = "digest"
@@ -1317,42 +1310,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ldk-server"
-version = "0.1.0"
-source = "git+https://github.com/moneydevkit/ldk-server?rev=a17acc8f0b0c7803562ffdfa2e7cc87f85b12c31#a17acc8f0b0c7803562ffdfa2e7cc87f85b12c31"
-dependencies = [
- "async-trait",
- "base64 0.21.7",
- "bytes",
- "chrono",
- "clap",
- "getrandom 0.2.17",
- "hex-conservative",
- "http-body-util",
- "hyper",
- "hyper-util",
- "ldk-node 0.7.0 (git+https://github.com/moneydevkit/ldk-node?rev=c3aba2a47a6314968979de8fe772d9d1bcb3ee6e)",
- "ldk-server-protos",
- "log",
- "prost",
- "ring",
- "rusqlite",
- "serde",
- "tokio",
- "tokio-rustls",
- "toml",
-]
-
-[[package]]
-name = "ldk-server-protos"
-version = "0.1.0"
-source = "git+https://github.com/moneydevkit/ldk-server?rev=a17acc8f0b0c7803562ffdfa2e7cc87f85b12c31#a17acc8f0b0c7803562ffdfa2e7cc87f85b12c31"
-dependencies = [
- "prost",
- "prost-build",
-]
-
-[[package]]
 name = "leb128fmt"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1742,14 +1699,15 @@ version = "0.0.1"
 dependencies = [
  "axum",
  "base64 0.22.1",
+ "chrono",
  "clap",
  "corepc-node",
  "futures-util",
  "hex-conservative",
  "hmac",
  "http-body-util",
+ "ldk-node 0.7.0 (git+https://github.com/moneydevkit/ldk-node?rev=c3aba2a47a6314968979de8fe772d9d1bcb3ee6e)",
  "ldk-node 0.7.0 (git+https://github.com/moneydevkit/ldk-node?rev=e5fcce065fa97c522de0f8fec87beb9e7e541456)",
- "ldk-server",
  "log",
  "reqwest",
  "rusqlite",
@@ -1757,9 +1715,9 @@ dependencies = [
  "serde_json",
  "sha2",
  "tempfile",
- "time",
  "tokio",
  "tokio-tungstenite 0.26.2",
+ "toml",
  "tower",
  "utoipa",
  "utoipa-axum",
@@ -1823,12 +1781,6 @@ source = "git+https://github.com/arik-so/rust-musig2?rev=6f95a05718cbb44d8fe3fa6
 dependencies = [
  "bitcoin",
 ]
-
-[[package]]
-name = "num-conv"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6673768db2d862beb9b39a78fdcb1a69439615d5794a1be50caa9bc92c81967"
 
 [[package]]
 name = "num-traits"
@@ -1952,12 +1904,6 @@ checksum = "b73949432f5e2a09657003c25bca5e19a0e9c84f8058ca374f49e0ebe605af77"
 dependencies = [
  "zerovec",
 ]
-
-[[package]]
-name = "powerfmt"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "439ee305def115ba05938db6eb1644ff94165c5ab5e9420d1c1bcedbba909391"
 
 [[package]]
 name = "ppv-lite86"
@@ -2654,37 +2600,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "time"
-version = "0.3.47"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "743bd48c283afc0388f9b8827b976905fb217ad9e647fae3a379a9283c4def2c"
-dependencies = [
- "deranged",
- "itoa",
- "num-conv",
- "powerfmt",
- "serde_core",
- "time-core",
- "time-macros",
-]
-
-[[package]]
-name = "time-core"
-version = "0.1.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7694e1cfe791f8d31026952abf09c69ca6f6fa4e1a1229e18988f06a04a12dca"
-
-[[package]]
-name = "time-macros"
-version = "0.2.27"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e70e4c5a0e0a8a4823ad65dfe1a6930e4f4d756dcd9dd7939022b5e8c501215"
-dependencies = [
- "num-conv",
- "time-core",
-]
-
-[[package]]
 name = "tinystr"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2814,8 +2729,15 @@ dependencies = [
  "serde",
  "serde_spanned",
  "toml_datetime",
+ "toml_write",
  "winnow",
 ]
+
+[[package]]
+name = "toml_write"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
 
 [[package]]
 name = "tower"

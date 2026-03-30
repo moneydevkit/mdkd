@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use ldk_server::ldk_node::{Event, Node};
+use ldk_node::{Event, Node};
 use log::{error, info};
 use tokio::sync::broadcast;
 

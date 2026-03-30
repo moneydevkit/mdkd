@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use axum::extract::{Path, Query, State};
 use axum::{middleware, Form, Json, Router};
-use ldk_server::ldk_node::Node;
+use ldk_node::Node;
 use tokio::sync::broadcast;
 use utoipa::openapi::security::{Http, HttpAuthScheme, SecurityScheme};
 use utoipa::{Modify, OpenApi};

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use ldk_server::ldk_node::bitcoin::{Address, FeeRate};
-use ldk_server::ldk_node::Node;
+use ldk_node::bitcoin::{Address, FeeRate};
+use ldk_node::Node;
 
 use crate::api::error::AppError;
 use crate::types::SendToAddressRequest;

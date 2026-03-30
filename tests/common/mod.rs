@@ -6,11 +6,12 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use ldk_server::ldk_node::bitcoin::Network;
-use ldk_server::ldk_node::config::Config as LdkNodeConfig;
-use ldk_server::ldk_node::lightning::ln::msgs::SocketAddress;
-use ldk_server::ldk_node::lightning_invoice::Bolt11Invoice;
-use ldk_server::ldk_node::{Builder, Node};
+use ldk_node::bitcoin::secp256k1::PublicKey;
+use ldk_node::bitcoin::Network;
+use ldk_node::config::Config as LdkNodeConfig;
+use ldk_node::lightning::ln::msgs::SocketAddress;
+use ldk_node::lightning_invoice::Bolt11Invoice;
+use ldk_node::{Builder, Node};
 
 use ldk_node_lsp::config::Config as LspNodeConfig;
 use ldk_node_lsp::lightning::ln::msgs::SocketAddress as LspSocketAddress;
@@ -308,7 +309,6 @@ impl PayerNode {
     }
 
     pub fn open_channel(&self, node_id: &str, addr: &str, amount_sats: u64) {
-        use ldk_server::ldk_node::bitcoin::secp256k1::PublicKey;
         let pubkey = PublicKey::from_str(node_id).unwrap();
         let socket_addr = SocketAddress::from_str(addr).unwrap();
         self.node

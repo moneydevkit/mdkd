@@ -1,4 +1,4 @@
-use ldk_server::ldk_node::ChannelDetails;
+use ldk_node::ChannelDetails;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 

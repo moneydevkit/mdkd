@@ -7,7 +7,8 @@ edition = "2021"
 demo = []
 
 [dependencies]
-ldk-server = { git = "https://github.com/moneydevkit/ldk-server", rev = "a17acc8f0b0c7803562ffdfa2e7cc87f85b12c31" }
+# Branch: https://github.com/moneydevkit/ldk-node/tree/lsp-0.7.0_socks-support
+ldk-node = { git = "https://github.com/moneydevkit/ldk-node", rev = "c3aba2a47a6314968979de8fe772d9d1bcb3ee6e" }
 
 axum = { version = "0.8", features = ["json", "ws"] }
 utoipa = { version = "5.4", features = ["axum_extras"] }
@@ -21,10 +22,11 @@ rusqlite = { version = "0.31.0", features = ["bundled"] }
 hex = { package = "hex-conservative", version = "0.2.1" }
 clap = { version = "4", features = ["derive"] }
 log = "0.4"
+toml = "0.8"
+chrono = "0.4"
 hmac = "0.12"
 sha2 = "0.10"
 base64 = "0.22"
-time = { version = "0.3", features = ["formatting"] }
 
 [dev-dependencies]
 corepc-node = { version = "0.10", features = ["29_0"] }

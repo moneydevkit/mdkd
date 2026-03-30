@@ -3,8 +3,8 @@ use std::sync::Arc;
 use axum::http::StatusCode;
 use axum::Json;
 use hex::FromHex;
-use ldk_server::ldk_node::lightning::ln::types::ChannelId;
-use ldk_server::ldk_node::Node;
+use ldk_node::lightning::ln::types::ChannelId;
+use ldk_node::Node;
 
 use crate::api::error::AppError;
 use crate::types::{ChannelInfo, CloseChannelRequest};

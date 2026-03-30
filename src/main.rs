@@ -2,6 +2,7 @@ mod api;
 mod config;
 mod event_loop;
 mod expiry;
+mod logger;
 mod mdk;
 mod secret;
 mod store;
@@ -16,20 +17,18 @@ use std::sync::Arc;
 
 use clap::Parser;
 use hex::FromHex;
-use ldk_server::ldk_node::bip39::Mnemonic;
-use ldk_server::ldk_node::bitcoin::secp256k1::PublicKey;
-use ldk_server::ldk_node::config::Config as LdkNodeConfig;
-use ldk_server::ldk_node::lightning::ln::msgs::SocketAddress;
-use ldk_server::ldk_node::Builder;
-use ldk_server::util::config::{get_default_data_dir, load_config};
-use ldk_server::util::logger::ServerLogger;
+use ldk_node::bip39::Mnemonic;
+use ldk_node::bitcoin::secp256k1::PublicKey;
+use ldk_node::config::Config as LdkNodeConfig;
+use ldk_node::lightning::ln::msgs::SocketAddress;
+use ldk_node::Builder;
 use log::{error, info};
 use reqwest::{Client, Proxy};
 use tokio::signal::unix::SignalKind;
 use tokio::sync::broadcast;
 
 use crate::api::{AppState, HttpAuth};
-use crate::config::{ChainSource, NetworkInfra};
+use crate::config::{get_default_data_dir, load_config, ChainSource, NetworkInfra};
 use crate::mdk::client::MdkApiClient;
 use crate::store::invoice_metadata::InvoiceMetadataStore;
 
@@ -61,12 +60,7 @@ struct Args {
 fn main() {
     let args = Args::parse();
 
-    // Build ldk-server's ArgsConfig to reuse their config loading.
-    // We pass the config file path as a positional arg.
-    let ldk_args =
-        ldk_server::util::config::ArgsConfig::parse_from(["mdk-server", &args.config_file]);
-
-    let config_file = match load_config(&ldk_args) {
+    let config_file = match load_config(&args.config_file) {
         Ok(config) => config,
         Err(e) => {
             eprintln!("Invalid configuration: {e}");
@@ -120,18 +114,7 @@ fn main() {
 
     let network_dir: PathBuf = storage_dir.join(format!("{}", config_file.network));
 
-    let log_file_path = config_file
-        .log_file_path
-        .map(PathBuf::from)
-        .unwrap_or_else(|| network_dir.join("mdk-server.log"));
-
-    let logger = match ServerLogger::init(config_file.log_level, &log_file_path) {
-        Ok(logger) => logger,
-        Err(e) => {
-            eprintln!("Failed to initialize logger: {e}");
-            std::process::exit(1);
-        }
-    };
+    logger::init(config_file.log_level);
 
     // Optional SOCKS5 proxy for all outbound traffic.
     let socks_proxy_url = args.socks_proxy;
@@ -298,14 +281,6 @@ fn main() {
     let bind_addr = config_file.rest_service_addr;
 
     runtime.block_on(async {
-        let mut sighup_stream = match tokio::signal::unix::signal(SignalKind::hangup()) {
-            Ok(stream) => stream,
-            Err(e) => {
-                error!("Failed to register SIGHUP handler: {e}");
-                std::process::exit(1);
-            }
-        };
-
         let mut sigterm_stream = match tokio::signal::unix::signal(SignalKind::terminate()) {
             Ok(stream) => stream,
             Err(e) => {
@@ -371,18 +346,12 @@ fn main() {
             }
         });
 
-        // Wait for shutdown signal.
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
                 info!("Received CTRL-C, shutting down...");
             }
             _ = sigterm_stream.recv() => {
                 info!("Received SIGTERM, shutting down...");
-            }
-            _ = sighup_stream.recv() => {
-                if let Err(e) = logger.reopen() {
-                    error!("Failed to reopen log file on SIGHUP: {e}");
-                }
             }
         }
     });

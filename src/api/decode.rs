@@ -1,8 +1,8 @@
 use std::str::FromStr;
 
 use axum::Json;
-use ldk_server::ldk_node::lightning::offers::offer::Offer;
-use ldk_server::ldk_node::lightning_invoice::Bolt11Invoice;
+use ldk_node::lightning::offers::offer::{Amount, Offer};
+use ldk_node::lightning_invoice::Bolt11Invoice;
 
 use crate::api::error::AppError;
 use crate::types::{
@@ -74,9 +74,7 @@ pub fn handle_decode_offer(
     let offer_id = hex::DisplayHex::to_lower_hex_string(&offer.id().0[..]);
 
     let (amount_msat, amount_sat) = match offer.amount() {
-        Some(ldk_server::ldk_node::lightning::offers::offer::Amount::Bitcoin { amount_msats }) => {
-            (Some(amount_msats), Some(amount_msats / 1000))
-        }
+        Some(Amount::Bitcoin { amount_msats }) => (Some(amount_msats), Some(amount_msats / 1000)),
         _ => (None, None),
     };
 
@@ -99,8 +97,8 @@ pub fn handle_decode_offer(
 mod tests {
     use super::*;
 
-    use ldk_server::ldk_node::bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
-    use ldk_server::ldk_node::lightning::offers::offer::OfferBuilder;
+    use ldk_node::bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
+    use ldk_node::lightning::offers::offer::OfferBuilder;
 
     use crate::types::{DecodeInvoiceRequest, DecodeOfferRequest};
 
