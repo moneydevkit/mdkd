@@ -8,7 +8,6 @@ demo = []
 
 [dependencies]
 ldk-server = { git = "https://github.com/moneydevkit/ldk-server", rev = "a17acc8f0b0c7803562ffdfa2e7cc87f85b12c31" }
-ldk-server-protos = { git = "https://github.com/moneydevkit/ldk-server", rev = "a17acc8f0b0c7803562ffdfa2e7cc87f85b12c31" }
 
 axum = { version = "0.8", features = ["json", "ws"] }
 utoipa = { version = "5.4", features = ["axum_extras"] }
@@ -22,8 +21,6 @@ rusqlite = { version = "0.31.0", features = ["bundled"] }
 hex = { package = "hex-conservative", version = "0.2.1" }
 clap = { version = "4", features = ["derive"] }
 log = "0.4"
-getrandom = "0.2"
-prost = "0.11.6"
 hmac = "0.12"
 sha2 = "0.10"
 base64 = "0.22"

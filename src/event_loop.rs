@@ -1,16 +1,7 @@
 use std::sync::Arc;
 
-use hex::DisplayHex;
-use ldk_server::io::persist::paginated_kv_store::PaginatedKVStore;
-use ldk_server::io::persist::{
-    FORWARDED_PAYMENTS_PERSISTENCE_PRIMARY_NAMESPACE,
-    FORWARDED_PAYMENTS_PERSISTENCE_SECONDARY_NAMESPACE, PAYMENTS_PERSISTENCE_PRIMARY_NAMESPACE,
-    PAYMENTS_PERSISTENCE_SECONDARY_NAMESPACE,
-};
 use ldk_server::ldk_node::{Event, Node};
-use ldk_server::util::proto_adapter::{forwarded_payment_to_proto, payment_to_proto};
 use log::{error, info};
-use prost::Message;
 use tokio::sync::broadcast;
 
 use crate::mdk::client::MdkApiClient;
@@ -22,7 +13,6 @@ use crate::webhook::dispatcher::spawn_webhook_delivery;
 
 pub async fn run_event_loop(
     node: Arc<Node>,
-    paginated_store: Arc<dyn PaginatedKVStore>,
     metadata_store: Arc<InvoiceMetadataStore>,
     webhook_secret: Vec<u8>,
     http_client: reqwest::Client,
@@ -33,40 +23,17 @@ pub async fn run_event_loop(
         let event = node.next_event_async().await;
         match event {
             Event::PaymentReceived {
-                payment_id,
                 payment_hash,
                 amount_msat,
                 ..
             } => {
                 info!(
-                    "PAYMENT_RECEIVED: id {:?}, hash {}, amount_msat {}",
-                    payment_id, payment_hash, amount_msat
+                    "PAYMENT_RECEIVED: hash {}, amount_msat {}",
+                    payment_hash, amount_msat
                 );
 
-                let payment_id = payment_id.expect("PaymentId expected for ldk-server >=0.1");
-
-                if let Some(payment_details) = node.payment(&payment_id) {
-                    let payment = payment_to_proto(payment_details);
-                    let time = time::seconds_since_epoch();
-
-                    match paginated_store.write(
-                        PAYMENTS_PERSISTENCE_PRIMARY_NAMESPACE,
-                        PAYMENTS_PERSISTENCE_SECONDARY_NAMESPACE,
-                        &payment.id,
-                        time as i64,
-                        &payment.encode_to_vec(),
-                    ) {
-                        Ok(_) => {
-                            if let Err(e) = node.event_handled() {
-                                error!("Failed to mark event as handled: {e}");
-                            }
-                        }
-                        Err(e) => {
-                            error!("Failed to write payment to persistence: {e}");
-                        }
-                    }
-                } else {
-                    error!("Unable to find payment with paymentId: {payment_id}");
+                if let Err(e) = node.event_handled() {
+                    error!("Failed to mark event as handled: {e}");
                 }
 
                 // Trigger webhook and MDK notification if registered for this payment hash.
@@ -77,7 +44,6 @@ pub async fn run_event_loop(
                             error!("Failed to mark payment paid: {e}");
                         }
 
-                        // Build the event once: used for both WS broadcast and webhook.
                         let event = WebhookEvent::PaymentReceived {
                             payment_hash: hash_str.clone(),
                             amount_msat,
@@ -85,7 +51,6 @@ pub async fn run_event_loop(
                             timestamp: time::seconds_since_epoch(),
                         };
 
-                        // Broadcast to WebSocket subscribers (ignore if no receivers).
                         if let Ok(json) = serde_json::to_string(&event) {
                             let _ = event_tx.send(json);
                         }
@@ -99,7 +64,6 @@ pub async fn run_event_loop(
                             );
                         }
 
-                        // Notify moneydevkit.com of the payment.
                         let client = Arc::clone(&mdk_client);
                         let hash = hash_str.clone();
                         let amount_sats = amount_msat / 1000;
@@ -128,33 +92,12 @@ pub async fn run_event_loop(
                     Err(e) => error!("Failed to look up invoice metadata: {e}"),
                 }
             }
-            Event::PaymentSuccessful { payment_id, .. } => {
-                let payment_id = payment_id.expect("PaymentId expected for ldk-server >=0.1");
-                upsert_payment(&node, &paginated_store, &payment_id);
-            }
-            Event::PaymentFailed { payment_id, .. } => {
-                let payment_id = payment_id.expect("PaymentId expected for ldk-server >=0.1");
-                upsert_payment(&node, &paginated_store, &payment_id);
-            }
-            Event::PaymentClaimable { payment_id, .. } => {
-                if let Some(payment_details) = node.payment(&payment_id) {
-                    let payment = payment_to_proto(payment_details);
-                    upsert_payment_proto(&node, &paginated_store, &payment);
-                } else {
-                    error!("Unable to find payment with paymentId: {payment_id}");
-                }
-            }
             Event::PaymentForwarded {
                 prev_channel_id,
                 next_channel_id,
-                prev_user_channel_id,
-                next_user_channel_id,
-                prev_node_id,
-                next_node_id,
                 total_fee_earned_msat,
-                skimmed_fee_msat,
-                claim_from_onchain_tx,
                 outbound_amount_forwarded_msat,
+                ..
             } => {
                 info!(
                     "PAYMENT_FORWARDED: outbound_msat {}, fee_msat: {}, in: {}, out: {}",
@@ -163,39 +106,8 @@ pub async fn run_event_loop(
                     prev_channel_id,
                     next_channel_id
                 );
-
-                let forwarded_payment = forwarded_payment_to_proto(
-                    prev_channel_id,
-                    next_channel_id,
-                    prev_user_channel_id,
-                    next_user_channel_id,
-                    prev_node_id,
-                    next_node_id,
-                    total_fee_earned_msat,
-                    skimmed_fee_msat,
-                    claim_from_onchain_tx,
-                    outbound_amount_forwarded_msat,
-                );
-
-                let mut forwarded_payment_id = [0u8; 32];
-                getrandom::getrandom(&mut forwarded_payment_id)
-                    .expect("Failed to generate random bytes");
-
-                match paginated_store.write(
-                    FORWARDED_PAYMENTS_PERSISTENCE_PRIMARY_NAMESPACE,
-                    FORWARDED_PAYMENTS_PERSISTENCE_SECONDARY_NAMESPACE,
-                    &forwarded_payment_id.to_lower_hex_string(),
-                    time::seconds_since_epoch() as i64,
-                    &forwarded_payment.encode_to_vec(),
-                ) {
-                    Ok(_) => {
-                        if let Err(e) = node.event_handled() {
-                            error!("Failed to mark event as handled: {e}");
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to write forwarded payment to persistence: {e}");
-                    }
+                if let Err(e) = node.event_handled() {
+                    error!("Failed to mark event as handled: {e}");
                 }
             }
             Event::ChannelPending {
@@ -229,42 +141,6 @@ pub async fn run_event_loop(
                     error!("Failed to mark event as handled: {e}");
                 }
             }
-        }
-    }
-}
-
-fn upsert_payment(
-    node: &Node,
-    paginated_store: &Arc<dyn PaginatedKVStore>,
-    payment_id: &ldk_server::ldk_node::lightning::ln::channelmanager::PaymentId,
-) {
-    if let Some(payment_details) = node.payment(payment_id) {
-        let payment = payment_to_proto(payment_details);
-        upsert_payment_proto(node, paginated_store, &payment);
-    } else {
-        error!("Unable to find payment with paymentId: {payment_id}");
-    }
-}
-
-fn upsert_payment_proto(
-    node: &Node,
-    paginated_store: &Arc<dyn PaginatedKVStore>,
-    payment: &ldk_server_protos::types::Payment,
-) {
-    match paginated_store.write(
-        PAYMENTS_PERSISTENCE_PRIMARY_NAMESPACE,
-        PAYMENTS_PERSISTENCE_SECONDARY_NAMESPACE,
-        &payment.id,
-        time::seconds_since_epoch() as i64,
-        &payment.encode_to_vec(),
-    ) {
-        Ok(_) => {
-            if let Err(e) = node.event_handled() {
-                error!("Failed to mark event as handled: {e}");
-            }
-        }
-        Err(e) => {
-            error!("Failed to write payment to persistence: {e}");
         }
     }
 }

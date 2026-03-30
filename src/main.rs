@@ -16,8 +16,6 @@ use std::sync::Arc;
 
 use clap::Parser;
 use hex::FromHex;
-use ldk_server::io::persist::paginated_kv_store::PaginatedKVStore;
-use ldk_server::io::persist::sqlite_store::SqliteStore;
 use ldk_server::ldk_node::bip39::Mnemonic;
 use ldk_server::ldk_node::bitcoin::secp256k1::PublicKey;
 use ldk_server::ldk_node::config::Config as LdkNodeConfig;
@@ -243,16 +241,6 @@ fn main() {
         }
     };
 
-    let paginated_store: Arc<dyn PaginatedKVStore> =
-        Arc::new(match SqliteStore::new(network_dir.clone(), None, None) {
-            Ok(store) => store,
-            Err(e) => {
-                error!("Failed to create SqliteStore: {e:?}");
-                std::process::exit(1);
-            }
-        });
-
-    // Open metadata store in the same SQLite DB file.
     let db_path = network_dir.join("ldk_server_data.sqlite");
     let metadata_store = match InvoiceMetadataStore::new(&db_path) {
         Ok(store) => Arc::new(store),
@@ -360,7 +348,6 @@ fn main() {
         });
 
         let event_node = Arc::clone(&node);
-        let event_store = Arc::clone(&paginated_store);
         let event_metadata = Arc::clone(&metadata_store);
         let event_secret = webhook_secret;
         let event_client = http_client.clone();
@@ -369,7 +356,6 @@ fn main() {
         tokio::spawn(async move {
             event_loop::run_event_loop(
                 event_node,
-                event_store,
                 event_metadata,
                 event_secret,
                 event_client,
