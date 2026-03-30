@@ -1097,6 +1097,22 @@ async fn test_sendtoaddress_success() {
     let txid = resp.text().await.unwrap();
     assert_eq!(txid.len(), 64, "txid should be 64-char hex");
 
+    // The send should appear immediately in outgoing payments (before chain sync).
+    let outgoing: Vec<serde_json::Value> =
+        server.get("/payments/outgoing").await.json().await.unwrap();
+    assert!(
+        !outgoing.is_empty(),
+        "Expected at least one outgoing payment immediately after send"
+    );
+    let found = outgoing.iter().find(|p| p["txId"].as_str() == Some(&txid));
+    assert!(
+        found.is_some(),
+        "Outgoing payment with txid {txid} not found in list: {outgoing:?}"
+    );
+    let payment = found.unwrap();
+    assert_eq!(payment["sent"].as_u64().unwrap(), send_amount);
+    assert!(payment["txId"].as_str().is_some());
+
     // Confirm the send tx, then poll until the wallet syncs.
     bitcoind.mine_blocks(1);
     let start = std::time::Instant::now();
@@ -1112,6 +1128,32 @@ async fn test_sendtoaddress_success() {
                 "On-chain balance never decreased after send: before={onchain}, after={onchain_after}"
             );
         }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+
+    // After enough confirmations (ANTI_REORG_DELAY = 6), outgoing payment should
+    // be marked as paid.
+    bitcoind.mine_blocks(6);
+    let start = std::time::Instant::now();
+    loop {
+        let outgoing: Vec<serde_json::Value> =
+            server.get("/payments/outgoing").await.json().await.unwrap();
+        let payment = outgoing
+            .iter()
+            .find(|p| p["txId"].as_str() == Some(&txid))
+            .expect("outgoing payment should still be in list");
+        if payment["isPaid"].as_bool().unwrap() {
+            assert!(
+                payment["fees"].as_u64().is_some(),
+                "fees should be set after confirmation"
+            );
+            assert!(payment["completedAt"].as_u64().is_some());
+            break;
+        }
+        if start.elapsed() > Duration::from_secs(30) {
+            panic!("Outgoing payment never marked as paid: {payment}");
+        }
+        bitcoind.mine_blocks(1);
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
 }
