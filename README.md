@@ -64,6 +64,9 @@ mdkd config.toml \
   6< <(vault kv get -field=password_read_only secret/mdk) \
   7< <(vault kv get -field=access_token secret/mdk)
 
+# Route all traffic through Tor or another SOCKS5 proxy
+mdkd config.toml --socks-proxy socks5://127.0.0.1:9050
+
 # Local dev -- env var fallback, no ceremony
 source .env && mdkd config.toml
 ```
@@ -93,7 +96,7 @@ http://127.0.0.1:8081/scalar
 
 ### config.toml
 
-The config file follows ldk-server's format. A minimal mainnet example:
+A minimal mainnet example:
 
 ```toml
 [node]
@@ -106,9 +109,6 @@ dir_path = "/var/lib/mdkd"
 
 [log]
 level = "Info"
-
-[esplora]
-server_url = "https://esplora.moneydevkit.com/api"
 ```
 
 `rest_service_address` is the bind address for the server API.
@@ -122,6 +122,12 @@ variables** (fallback). FD-based passing avoids leaking secrets through
 For each secret, pass `--<name>-fd N` where `N` is an open file descriptor
 containing the value. If the flag is omitted, the corresponding env var is
 checked. If neither is present the process exits with an error.
+
+#### Additional CLI flags
+
+| Flag | Description |
+|------|-------------|
+| `--socks-proxy <url>` | Route all outbound traffic (LDK peer connections and HTTP) through a SOCKS5 proxy. Example: `socks5://127.0.0.1:9050`. |
 
 #### Required on all networks
 
@@ -140,11 +146,17 @@ checked. If neither is present the process exits with an error.
 | `MDK_LSP_NODE_ID` | Public key of the MoneyDevKit lightning node. |
 | `MDK_LSP_ADDRESS` | `host:port` of the MoneyDevKit lightning P2P socket. |
 | `MDK_API_BASE_URL` | Base URL of the MoneyDevKit RPC API (e.g. `http://localhost:3900/rpc`). |
+| `MDK_BITCOIND_RPC_HOST` | Hostname of the bitcoind RPC server. |
+| `MDK_BITCOIND_RPC_PORT` | Port of the bitcoind RPC server. |
+| `MDK_BITCOIND_RPC_USER` | Bitcoind RPC username. |
+| `MDK_BITCOIND_RPC_PASSWORD` | Bitcoind RPC password. |
+| `MDK_VSS_URL` | URL of the VSS instance (e.g. `http://localhost:8080/vss`). |
 
 ### Generating secrets
 
 **MDK_ACCESS_TOKEN** -- sign in to [moneydevkit.com](https://moneydevkit.com),
-create an app, and copy the API key.
+create an app, and copy the API key. Note that you do not need to specify a real
+domain when using this daemon. `https://localhost` will suffice.
 
 **MDK_MNEMONIC** -- Same as above but hit `Generate Mnemonic` instead of copying the key or
 generate your own fresh BIP-39 mnemonic. Back it up offline. This is your wallet seed.
@@ -173,12 +185,21 @@ openssl rand -hex 32
 
 ### Supported networks
 
-| Network | LSP infrastructure | Chain source |
-|---------|-------------------|--------------|
-| `bitcoin` (mainnet) | Hard-coded | config.toml |
-| `signet` (mutinynet) | Hard-coded | config.toml |
-| `regtest` | Env vars | config.toml |
+| Network | LSP + chain source | VSS |
+|---------|-------------------|-----|
+| `bitcoin` (mainnet) | Hard-coded | Hard-coded |
+| `signet` (mutinynet) | Hard-coded | Hard-coded |
+| `regtest` | Env vars | `MDK_VSS_URL` env var |
 | `testnet` | Not yet supported | -- |
+
+## Storage
+
+Wallet state (channels, keys, routing scores) is replicated to a remote
+[Versioned Storage Service](https://github.com/lightningdevkit/vss-server)
+(VSS). This gives you encrypted cloud backup of node state out of the box.
+
+Local data (invoice metadata, outgoing payment tracking) lives in a SQLite
+database at `<storage_dir>/<network>/mdkd.sqlite`.
 
 ## CI and releases
 
