@@ -10,6 +10,10 @@
     };
     crane.url = "github:ipetkov/crane";
     nixpkgs-unstable.url = "github:nixos/nixpkgs/e6f23dc08d3624daab7094b701aa3954923c6bbb";
+    vss-server = {
+      url = "github:lightningdevkit/vss-server";
+      flake = false;
+    };
   };
 
   outputs =
@@ -20,6 +24,7 @@
       fenix,
       crane,
       nixpkgs-unstable,
+      vss-server,
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
@@ -107,6 +112,35 @@
             Entrypoint = [ "/bin/mdk-server" ];
           };
         };
+
+        # VSS server (lightningdevkit/vss-server) for integration tests.
+        # Built with noop_authorizer so no JWT/sig config is needed.
+        vssSrc = craneLib.cleanCargoSource "${vss-server}/rust";
+        vssArgs = {
+          src = vssSrc;
+          pname = "vss-server";
+          version = "0.1.0";
+          strictDeps = true;
+          nativeBuildInputs = [
+            pkgs.protobuf
+            pkgs.pkg-config
+            pkgs.autoPatchelfHook
+          ];
+          buildInputs = [
+            pkgs.openssl
+            pkgs.stdenv.cc.cc.lib
+          ];
+          cargoExtraArgs = "--no-default-features";
+          CARGO_BUILD_RUSTFLAGS = "--cfg noop_authorizer";
+        };
+        vssCargoArtifacts = craneLib.buildDepsOnly vssArgs;
+        vss = craneLib.buildPackage (
+          vssArgs
+          // {
+            cargoArtifacts = vssCargoArtifacts;
+            doCheck = false;
+          }
+        );
       in
       {
         packages = {
@@ -124,6 +158,7 @@
               cargoNextestExtraArgs = "--test integration";
             }
           );
+          inherit vss;
         }
         // lib.optionalAttrs isLinux {
           static = staticBin;
@@ -161,10 +196,12 @@
             jq
             unixtools.xxd
             microsocks
+            postgresql_16
           ];
 
           env = {
             BITCOIND_EXE = "${pkgsUnstable.bitcoind}/bin/bitcoind";
+            VSS_EXE = "${vss}/bin/vss-server";
             NIX_SYSTEM = system;
           };
 

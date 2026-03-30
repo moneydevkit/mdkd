@@ -92,7 +92,8 @@
         "fenix": "fenix",
         "flake-utils": "flake-utils",
         "nixpkgs": "nixpkgs",
-        "nixpkgs-unstable": "nixpkgs-unstable"
+        "nixpkgs-unstable": "nixpkgs-unstable",
+        "vss-server": "vss-server"
       }
     },
     "rust-analyzer-src": {
@@ -124,6 +125,22 @@
       "original": {
         "owner": "nix-systems",
         "repo": "default",
+        "type": "github"
+      }
+    },
+    "vss-server": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1773971508,
+        "narHash": "sha256-auQU9Odzk5GKH2NF0fJCzWFHdYa4wGThuLWS4QBQpG8=",
+        "owner": "lightningdevkit",
+        "repo": "vss-server",
+        "rev": "3a57b1b39fbd4ffb4e5f2ecdbde3e0f6f3584ca7",
+        "type": "github"
+      },
+      "original": {
+        "owner": "lightningdevkit",
+        "repo": "vss-server",
         "type": "github"
       }
     }

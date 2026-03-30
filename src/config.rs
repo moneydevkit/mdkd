@@ -145,6 +145,7 @@ pub struct LspInfra {
     pub lsp_node_id: &'static str,
     pub lsp_address: &'static str,
     pub mdk_api_base_url: &'static str,
+    pub vss_url: &'static str,
 }
 
 impl LspInfra {
@@ -155,12 +156,14 @@ impl LspInfra {
                 lsp_node_id: "02a63339cc6b913b6330bd61b2f469af8785a6011a6305bb102298a8e76697473b",
                 lsp_address: "lsp.moneydevkit.com:9735",
                 mdk_api_base_url: "https://moneydevkit.com/rpc",
+                vss_url: "https://vss.moneydevkit.com/vss",
             }),
             Network::Signet => Some(LspInfra {
                 chain_source: ChainSource::Esplora("https://mutinynet.com/api"),
                 lsp_node_id: "03fd9a377576df94cc7e458471c43c400630655083dee89df66c6ad38d1b7acffd",
                 lsp_address: "lsp.staging.moneydevkit.com:9735",
                 mdk_api_base_url: "https://staging.moneydevkit.com/rpc",
+                vss_url: "https://vss.staging.moneydevkit.com/vss",
             }),
             _ => None,
         }
@@ -184,6 +187,7 @@ pub enum NetworkInfra {
         lsp_node_id: String,
         lsp_address: String,
         mdk_api_base_url: String,
+        vss_url: String,
     },
 }
 
@@ -209,6 +213,7 @@ impl NetworkInfra {
                     lsp_node_id: env_required("MDK_LSP_NODE_ID")?,
                     lsp_address: env_required("MDK_LSP_ADDRESS")?,
                     mdk_api_base_url: env_required("MDK_API_BASE_URL")?,
+                    vss_url: env_required("MDK_VSS_URL")?,
                 })
             }
         }
@@ -223,24 +228,31 @@ impl NetworkInfra {
 
     pub fn lsp_node_id(&self) -> &str {
         match self {
-            NetworkInfra::Production(i) => i.lsp_node_id,
+            NetworkInfra::Production(lsp_infra) => lsp_infra.lsp_node_id,
             NetworkInfra::Regtest { lsp_node_id, .. } => lsp_node_id,
         }
     }
 
     pub fn lsp_address(&self) -> &str {
         match self {
-            NetworkInfra::Production(i) => i.lsp_address,
+            NetworkInfra::Production(lsp_infra) => lsp_infra.lsp_address,
             NetworkInfra::Regtest { lsp_address, .. } => lsp_address,
         }
     }
 
     pub fn mdk_api_base_url(&self) -> &str {
         match self {
-            NetworkInfra::Production(i) => i.mdk_api_base_url,
+            NetworkInfra::Production(lsp_infra) => lsp_infra.mdk_api_base_url,
             NetworkInfra::Regtest {
                 mdk_api_base_url, ..
             } => mdk_api_base_url,
+        }
+    }
+
+    pub fn vss_url(&self) -> &str {
+        match self {
+            NetworkInfra::Production(lsp_infra) => lsp_infra.vss_url,
+            NetworkInfra::Regtest { vss_url, .. } => vss_url,
         }
     }
 }

@@ -10,6 +10,7 @@ mod time;
 mod types;
 mod webhook;
 
+use std::collections::HashMap;
 use std::net::ToSocketAddrs;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -18,6 +19,8 @@ use std::sync::Arc;
 use clap::Parser;
 use hex::FromHex;
 use ldk_node::bip39::Mnemonic;
+use ldk_node::bitcoin::hashes::sha256;
+use ldk_node::bitcoin::hashes::Hash;
 use ldk_node::bitcoin::secp256k1::PublicKey;
 use ldk_node::config::Config as LdkNodeConfig;
 use ldk_node::lightning::ln::msgs::SocketAddress;
@@ -113,6 +116,13 @@ fn main() {
     };
 
     let network_dir: PathBuf = storage_dir.join(format!("{}", config_file.network));
+    if let Err(e) = std::fs::create_dir_all(&network_dir) {
+        eprintln!(
+            "Failed to create data directory {}: {e}",
+            network_dir.display()
+        );
+        std::process::exit(1);
+    }
 
     logger::init(config_file.log_level);
 
@@ -213,10 +223,20 @@ fn main() {
         error!("Invalid MDK_MNEMONIC: {e}");
         std::process::exit(1);
     });
-    builder.set_entropy_bip39_mnemonic(mnemonic, None);
-    info!("Wallet seed derived from MDK_MNEMONIC");
+    builder.set_entropy_bip39_mnemonic(mnemonic.clone(), None);
 
-    let node = match builder.build() {
+    let store_id = derive_vss_identifier(&mnemonic);
+    info!(
+        "VSS store: {} (store_id={}...)",
+        infra.vss_url(),
+        &store_id[..16]
+    );
+
+    let node = match builder.build_with_vss_store_and_fixed_headers(
+        infra.vss_url().to_string(),
+        store_id,
+        HashMap::new(),
+    ) {
         Ok(node) => Arc::new(node),
         Err(e) => {
             error!("Failed to build LDK Node: {e}");
@@ -224,7 +244,7 @@ fn main() {
         }
     };
 
-    let db_path = network_dir.join("ldk_server_data.sqlite");
+    let db_path = network_dir.join("mdkd.sqlite");
     let metadata_store = match InvoiceMetadataStore::new(&db_path) {
         Ok(store) => Arc::new(store),
         Err(e) => {
@@ -358,4 +378,9 @@ fn main() {
 
     node.stop().expect("Shutdown should always succeed.");
     info!("Shutdown complete.");
+}
+
+fn derive_vss_identifier(mnemonic: &Mnemonic) -> String {
+    let mnemonic_phrase = mnemonic.to_string();
+    sha256::Hash::hash(mnemonic_phrase.as_bytes()).to_string()
 }
