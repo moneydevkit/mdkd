@@ -23,17 +23,80 @@ clippy:
 unit-test:
     nix build .#checks.{{system}}.test
 
-# Run integration tests
+# Run integration tests (starts ephemeral PostgreSQL + VSS, tears down after)
 integration-test *args:
-    cargo nextest run --test integration {{args}}
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    : "${VSS_EXE:?VSS_EXE not set (use nix develop)}"
+
+    # -- Ephemeral PostgreSQL -----------------------------------------------
+    pg_dir=$(mktemp -d)
+    pg_port=$(shuf -i 10000-60000 -n 1)
+    pg_log="$pg_dir/pg.log"
+
+    cleanup() {
+      echo "==> Tearing down..."
+      [ -n "${VSS_PID:-}" ] && kill "$VSS_PID" 2>/dev/null && wait "$VSS_PID" 2>/dev/null || true
+      pg_ctl -D "$pg_dir/data" -m immediate stop 2>/dev/null || true
+      rm -rf "$pg_dir"
+    }
+    trap cleanup EXIT
+
+    echo "==> Starting ephemeral PostgreSQL on port $pg_port..."
+    initdb -D "$pg_dir/data" --no-locale --encoding=UTF8 -A trust >/dev/null
+    pg_ctl -D "$pg_dir/data" -l "$pg_log" -o "-p $pg_port -k $pg_dir -h 127.0.0.1" start >/dev/null
+    for i in $(seq 1 30); do
+      pg_isready -h 127.0.0.1 -p "$pg_port" -q && break
+      sleep 0.1
+    done
+
+    # -- Start VSS ----------------------------------------------------------
+    vss_port=$(shuf -i 10000-60000 -n 1)
+    vss_config="$pg_dir/vss-config.toml"
+    cat > "$vss_config" << TOML
+    [server_config]
+    bind_address = "127.0.0.1:$vss_port"
+
+    [postgresql_config]
+    username = "$USER"
+    password = ""
+    address = "127.0.0.1:$pg_port"
+    default_database = "postgres"
+    vss_database = "vss_test"
+    TOML
+
+    vss_log="$pg_dir/vss.log"
+    echo "==> Starting VSS on port $vss_port..."
+    "$VSS_EXE" "$vss_config" >"$vss_log" 2>&1 &
+    VSS_PID=$!
+
+    for i in $(seq 1 30); do
+      # VSS has no health endpoint; probe putObjects (returns 400 on empty body = alive)
+      code=$(curl -sf -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:$vss_port/vss/putObjects" 2>/dev/null || true)
+      [ "$code" = "400" ] && break
+      sleep 0.2
+    done
+    echo "==> VSS ready at http://127.0.0.1:$vss_port/vss"
+
+    # -- Run tests ----------------------------------------------------------
+    if MDK_VSS_URL="http://127.0.0.1:$vss_port/vss" \
+      cargo nextest run --test integration {{args}}; then
+      :
+    else
+      echo ""
+      echo "==> VSS server log (on failure):"
+      # cat "$vss_log" skip this for now
+      exit 1
+    fi
 
 # Auto-fix lint issues
 fix:
     cargo clippy --all-targets --fix --allow-dirty --allow-staged
 
-# Run tests (cargo, all)
+# Run tests (unit + doc; use `just integration-test` for integration tests)
 test *args:
-    cargo nextest run {{args}}
+    cargo nextest run --bin mdk-server {{args}}
 
 # Run the server
 run *args:
@@ -517,6 +580,7 @@ dev-config:
     MDK_LSP_NODE_ID=${n1_pubkey}
     MDK_LSP_ADDRESS=127.0.0.1:${n1_p2p}
     MDK_API_BASE_URL=${MDK_API_BASE_URL:-http://localhost:3900/rpc}
+    MDK_VSS_URL=${MDK_VSS_URL:-http://localhost:9999/vss}
     MDK_WEBHOOK_SECRET=${MDK_WEBHOOK_SECRET:-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
     MDK_HTTP_PASSWORD_FULL=${MDK_HTTP_PASSWORD_FULL:-dev_full_password}
     MDK_HTTP_PASSWORD_READ_ONLY=${MDK_HTTP_PASSWORD_READ_ONLY:-dev_readonly_password}

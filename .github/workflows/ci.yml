@@ -36,7 +36,7 @@ jobs:
         run: nix flake check --print-build-logs
 
       - name: Run integration tests
-        run: nix build .#integration-test --print-build-logs
+        run: nix run .#integration-test --print-build-logs
 
   build:
     name: Build Static (${{ matrix.arch }})

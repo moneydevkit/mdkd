@@ -6,6 +6,7 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use ldk_node::bip39::Mnemonic;
 use ldk_node::bitcoin::secp256k1::PublicKey;
 use ldk_node::bitcoin::Network;
 use ldk_node::config::Config as LdkNodeConfig;
@@ -153,6 +154,12 @@ rpc_password = "{rpc_password}"
             .env("MDK_LSP_NODE_ID", &lsp_node_id)
             .env("MDK_LSP_ADDRESS", &lsp_address)
             .env("MDK_API_BASE_URL", &mdk_api_base_url)
+            .env(
+                "MDK_VSS_URL",
+                std::env::var("MDK_VSS_URL").unwrap_or_else(|_| {
+                    panic!("MDK_VSS_URL must be set (point at a running VSS server)")
+                }),
+            )
             .env("MDK_WEBHOOK_SECRET", &webhook_secret)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -660,4 +667,12 @@ pub fn find_available_port() -> u16 {
         .local_addr()
         .unwrap()
         .port()
+}
+
+/// Generate a fresh random BIP39 mnemonic so each test gets a unique node ID
+/// and VSS store, preventing parallel tests from clobbering each other.
+pub fn random_mnemonic() -> String {
+    Mnemonic::generate(12)
+        .expect("12-word mnemonic")
+        .to_string()
 }
