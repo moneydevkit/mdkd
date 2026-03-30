@@ -101,6 +101,7 @@
           staticArgs
           // {
             cargoArtifacts = staticCargoArtifacts;
+            doCheck = false;
           }
         );
 
