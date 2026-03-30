@@ -117,6 +117,35 @@ pub struct IncomingPaymentResponse {
     pub expires_at: Option<u64>,
 }
 
+#[derive(Deserialize, ToSchema, IntoParams)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase")]
+pub struct ListOutgoingPaymentsRequest {
+    pub from: Option<u64>,
+    pub to: Option<u64>,
+    pub limit: Option<u64>,
+    pub offset: Option<u64>,
+    /// If true, include failed payments. Otherwise only successful + pending.
+    pub all: Option<bool>,
+}
+
+/// Matches phoenixd's outgoing payment response shape.
+/// Timestamps are unix epoch seconds. Fees are in satoshis.
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OutgoingPaymentResponse {
+    pub payment_id: String,
+    pub payment_hash: Option<String>,
+    pub preimage: Option<String>,
+    pub tx_id: Option<String>,
+    pub is_paid: bool,
+    pub sent: Option<u64>,
+    pub fees: Option<u64>,
+    pub invoice: Option<String>,
+    pub completed_at: Option<u64>,
+    pub created_at: u64,
+}
+
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GetBalanceResponse {

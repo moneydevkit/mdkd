@@ -9,7 +9,7 @@ use ldk_node::bitcoin::hashes::sha256;
 use ldk_node::bitcoin::hashes::Hash as _;
 use ldk_node::lightning::ln::channelmanager::PaymentId;
 use ldk_node::lightning_invoice::{Bolt11Invoice, Bolt11InvoiceDescription, Description, Sha256};
-use ldk_node::payment::{PaymentDetails, PaymentKind, PaymentStatus};
+use ldk_node::payment::{PaymentDetails, PaymentDirection, PaymentKind, PaymentStatus};
 use ldk_node::Node;
 use log::{error, info};
 
@@ -18,7 +18,8 @@ use crate::mdk::client::MdkApiClient;
 use crate::mdk::types::{CheckoutCustomer, CreateCheckoutRequest, RegisterInvoiceRequest};
 use crate::store::invoice_metadata::{InvoiceMetadata, InvoiceMetadataStore};
 use crate::types::{
-    CreateInvoiceRequest, CreateInvoiceResponse, IncomingPaymentResponse, ListPaymentsRequest,
+    CreateInvoiceRequest, CreateInvoiceResponse, IncomingPaymentResponse,
+    ListOutgoingPaymentsRequest, ListPaymentsRequest, OutgoingPaymentResponse,
 };
 
 /// Cap to keep BOLT11 invoices compact (smaller QR codes).
@@ -257,6 +258,130 @@ pub async fn handle_list_incoming_payments(
         .collect();
 
     Ok(Json(payments))
+}
+
+pub async fn handle_list_outgoing_payments(
+    node: Arc<Node>,
+    metadata_store: Arc<InvoiceMetadataStore>,
+    params: &ListOutgoingPaymentsRequest,
+) -> Result<Json<Vec<OutgoingPaymentResponse>>, AppError> {
+    let now = crate::time::seconds_since_epoch();
+    let from = params.from.unwrap_or(0);
+    let to = params.to.unwrap_or(now);
+    let limit = params.limit.unwrap_or(20) as usize;
+    let offset = params.offset.unwrap_or(0) as usize;
+    let all = params.all.unwrap_or(false);
+
+    // Start with LDK's outbound payments.
+    let mut payments: Vec<OutgoingPaymentResponse> = node
+        .list_payments_with_filter(|p| p.direction == PaymentDirection::Outbound)
+        .into_iter()
+        .map(|p| payment_to_outgoing(&p))
+        .collect();
+
+    // Collect txids already known to LDK.
+    let known_txids: std::collections::HashSet<String> =
+        payments.iter().filter_map(|p| p.tx_id.clone()).collect();
+
+    // Merge locally stored sends that LDK hasn't picked up yet.
+    if let Ok(local_sends) = metadata_store.list_outgoing_sends() {
+        for send in local_sends {
+            if !known_txids.contains(&send.txid) {
+                payments.push(OutgoingPaymentResponse {
+                    payment_id: send.txid.clone(),
+                    payment_hash: None,
+                    preimage: None,
+                    tx_id: Some(send.txid),
+                    is_paid: false,
+                    sent: Some(send.amount_sat),
+                    fees: send.fee_sat,
+                    invoice: None,
+                    completed_at: None,
+                    created_at: send.created_at,
+                });
+            }
+        }
+    }
+
+    // Filter by time range.
+    payments.retain(|p| p.created_at >= from && p.created_at <= to);
+
+    // Filter out failed unless `all=true`.
+    if !all {
+        payments.retain(|p| p.is_paid || p.completed_at.is_none());
+    }
+
+    // Newest first.
+    payments.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+
+    let page = payments.into_iter().skip(offset).take(limit).collect();
+    Ok(Json(page))
+}
+
+pub async fn handle_get_outgoing_payment(
+    node: Arc<Node>,
+    Path(payment_id): Path<String>,
+) -> Result<Json<OutgoingPaymentResponse>, AppError> {
+    let id_bytes = <[u8; 32]>::from_hex(&payment_id)
+        .map_err(|_| AppError::BadRequest("Invalid payment id hex".into()))?;
+    let details = node
+        .payment(&PaymentId(id_bytes))
+        .ok_or_else(|| AppError::NotFound(format!("Payment {} not found", payment_id)))?;
+    if details.direction != PaymentDirection::Outbound {
+        return Err(AppError::NotFound(format!(
+            "Payment {} not found",
+            payment_id
+        )));
+    }
+    Ok(Json(payment_to_outgoing(&details)))
+}
+
+fn payment_to_outgoing(p: &PaymentDetails) -> OutgoingPaymentResponse {
+    let (payment_hash, preimage, tx_id) = match &p.kind {
+        PaymentKind::Onchain { txid, .. } => (None, None, Some(txid.to_string())),
+        PaymentKind::Bolt11 { hash, preimage, .. }
+        | PaymentKind::Bolt11Jit { hash, preimage, .. } => (
+            Some(hash.to_string()),
+            preimage.map(|pi| format!("{pi}")),
+            None,
+        ),
+        PaymentKind::Spontaneous { hash, preimage, .. } => (
+            Some(hash.to_string()),
+            preimage.map(|pi| format!("{pi}")),
+            None,
+        ),
+        PaymentKind::Bolt12Offer { hash, preimage, .. }
+        | PaymentKind::Bolt12Refund { hash, preimage, .. } => (
+            hash.map(|h| h.to_string()),
+            preimage.map(|pi| format!("{pi}")),
+            None,
+        ),
+    };
+
+    let is_paid = p.status == PaymentStatus::Succeeded;
+    let completed_at = if p.status != PaymentStatus::Pending {
+        Some(p.latest_update_timestamp)
+    } else {
+        None
+    };
+
+    OutgoingPaymentResponse {
+        payment_id: p
+            .id
+            .0
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>(),
+        payment_hash,
+        preimage,
+        tx_id,
+        is_paid,
+        sent: p.amount_msat.map(|m| m / 1000),
+        fees: p.fee_paid_msat.map(|m| m / 1000),
+        invoice: None,
+        completed_at,
+        created_at: p.latest_update_timestamp,
+    }
 }
 
 /// Build an `IncomingPaymentResponse` from stored metadata + LDK payment details.

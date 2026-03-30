@@ -9,6 +9,15 @@ pub struct InvoiceMetadataStore {
 }
 
 #[derive(Debug, Clone)]
+pub struct OutgoingSendRecord {
+    pub txid: String,
+    pub address: String,
+    pub amount_sat: u64,
+    pub fee_sat: Option<u64>,
+    pub created_at: u64,
+}
+
+#[derive(Debug, Clone)]
 pub struct InvoiceMetadata {
     pub payment_hash: String,
     pub external_id: Option<String>,
@@ -52,6 +61,17 @@ impl InvoiceMetadataStore {
         let _ = conn.execute_batch(
             "ALTER TABLE mdk_invoice_metadata ADD COLUMN paid INTEGER NOT NULL DEFAULT 0;",
         );
+
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS mdk_outgoing_sends (
+                txid TEXT PRIMARY KEY,
+                address TEXT NOT NULL,
+                amount_sat INTEGER NOT NULL,
+                fee_sat INTEGER,
+                created_at INTEGER NOT NULL
+            );",
+        )
+        .map_err(|e| io::Error::other(format!("Failed to create outgoing_sends table: {}", e)))?;
 
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -134,6 +154,50 @@ impl InvoiceMetadataStore {
         )
         .map_err(|e| io::Error::other(format!("Failed to mark payment paid: {}", e)))?;
         Ok(())
+    }
+
+    pub fn insert_outgoing_send(&self, record: &OutgoingSendRecord) -> io::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO mdk_outgoing_sends (txid, address, amount_sat, fee_sat, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![
+                &record.txid,
+                &record.address,
+                record.amount_sat as i64,
+                record.fee_sat.map(|f| f as i64),
+                record.created_at as i64,
+            ],
+        )
+        .map_err(|e| io::Error::other(format!("Failed to insert outgoing send: {}", e)))?;
+        Ok(())
+    }
+
+    pub fn list_outgoing_sends(&self) -> io::Result<Vec<OutgoingSendRecord>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT txid, address, amount_sat, fee_sat, created_at
+                 FROM mdk_outgoing_sends ORDER BY created_at DESC",
+            )
+            .map_err(|e| io::Error::other(format!("Failed to prepare outgoing query: {e}")))?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(OutgoingSendRecord {
+                    txid: row.get(0)?,
+                    address: row.get(1)?,
+                    amount_sat: row.get::<_, i64>(2)? as u64,
+                    fee_sat: row.get::<_, Option<i64>>(3)?.map(|v| v as u64),
+                    created_at: row.get::<_, i64>(4)? as u64,
+                })
+            })
+            .map_err(|e| io::Error::other(format!("Failed to query outgoing sends: {e}")))?;
+
+        rows.map(|row| {
+            row.map_err(|e| io::Error::other(format!("Failed to read outgoing row: {e}")))
+        })
+        .collect()
     }
 
     /// List invoices with pagination.
