@@ -1,4 +1,4 @@
-# mdk-server
+# mdkd
 
 Lightning payment server built on LDK. Connects to the MoneyDevKit platform
 for checkout management and uses LSPS4 for JIT channel liquidity.
@@ -22,7 +22,7 @@ just check
 
 # Static musl binary (Linux only)
 nix build .#static
-# -> result/bin/mdk-server
+# -> result/bin/mdkd
 ```
 
 ### Without Nix
@@ -47,14 +47,14 @@ Then build with cargo:
 
 ```bash
 cargo build --release
-# -> target/release/mdk-server
+# -> target/release/mdkd
 ```
 
 ## Running
 
 ```bash
 # Production -- secrets via file descriptors, nothing in the environment
-mdk-server config.toml \
+mdkd config.toml \
   --mnemonic-fd 3 --webhook-secret-fd 4 \
   --password-full-fd 5 --password-read-only-fd 6 \
   --access-token-fd 7 \
@@ -65,7 +65,7 @@ mdk-server config.toml \
   7< <(vault kv get -field=access_token secret/mdk)
 
 # Local dev -- env var fallback, no ceremony
-source .env && mdk-server config.toml
+source .env && mdkd config.toml
 ```
 
 ## Demo wallet
@@ -102,7 +102,7 @@ listening_addresses = ["0.0.0.0:9735"]
 rest_service_address = "127.0.0.1:8081"
 
 [storage.disk]
-dir_path = "/var/lib/mdk-server"
+dir_path = "/var/lib/mdkd"
 
 [log]
 level = "Info"

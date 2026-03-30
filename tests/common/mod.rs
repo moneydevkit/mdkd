@@ -76,10 +76,10 @@ impl TestBitcoind {
 }
 
 // ---------------------------------------------------------------------------
-// MdkServerHandle
+// MdkdHandle
 // ---------------------------------------------------------------------------
 
-pub struct MdkServerHandle {
+pub struct MdkdHandle {
     child: Option<Child>,
     pub api_port: u16,
     pub http_password_full: String,
@@ -88,7 +88,7 @@ pub struct MdkServerHandle {
     _mock_mdk: MockMdkApi,
 }
 
-impl MdkServerHandle {
+impl MdkdHandle {
     pub async fn start(
         bitcoind: &TestBitcoind,
         webhook_port: Option<u16>,
@@ -140,7 +140,7 @@ rpc_password = "{rpc_password}"
         let config_path = storage_dir.join("config.toml");
         std::fs::write(&config_path, &config).unwrap();
 
-        let binary = env!("CARGO_BIN_EXE_mdk-server");
+        let binary = env!("CARGO_BIN_EXE_mdkd");
         let mut child = Command::new(binary)
             .arg(config_path.to_str().unwrap())
             .env("MDK_MNEMONIC", mnemonic)
@@ -164,13 +164,13 @@ rpc_password = "{rpc_password}"
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .unwrap_or_else(|e| panic!("Failed to start mdk-server at {binary}: {e}"));
+            .unwrap_or_else(|e| panic!("Failed to start mdkd at {binary}: {e}"));
 
         let stdout = child.stdout.take().unwrap();
         std::thread::spawn(move || {
             let reader = BufReader::new(stdout);
             for line in reader.lines().map_while(Result::ok) {
-                eprintln!("[mdk-server stdout] {}", line);
+                eprintln!("[mdkd stdout] {}", line);
             }
         });
         let stderr = child.stderr.take().unwrap();
@@ -180,7 +180,7 @@ rpc_password = "{rpc_password}"
                 if line.contains("Failed to retrieve fee rate estimates") {
                     continue;
                 }
-                eprintln!("[mdk-server stderr] {}", line);
+                eprintln!("[mdkd stderr] {}", line);
             }
         });
 
@@ -245,14 +245,14 @@ rpc_password = "{rpc_password}"
             }
 
             if start.elapsed() > timeout {
-                panic!("Timed out waiting for mdk-server to become ready");
+                panic!("Timed out waiting for mdkd to become ready");
             }
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
     }
 }
 
-impl Drop for MdkServerHandle {
+impl Drop for MdkdHandle {
     fn drop(&mut self) {
         if let Some(mut child) = self.child.take() {
             let _ = child.kill();
@@ -262,7 +262,7 @@ impl Drop for MdkServerHandle {
 }
 
 // ---------------------------------------------------------------------------
-// PayerNode — raw ldk_node for paying invoices to mdk-server
+// PayerNode — raw ldk_node for paying invoices to mdkd
 // ---------------------------------------------------------------------------
 
 pub struct PayerNode {
@@ -512,7 +512,7 @@ async fn mock_payment_received() -> axum::Json<serde_json::Value> {
 }
 
 // ---------------------------------------------------------------------------
-// WebhookReceiver — captures POST requests from mdk-server
+// WebhookReceiver — captures POST requests from mdkd
 // ---------------------------------------------------------------------------
 
 pub struct WebhookReceiver {

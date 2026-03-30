@@ -96,7 +96,7 @@ fix:
 
 # Run tests (unit + doc; use `just integration-test` for integration tests)
 test *args:
-    cargo nextest run --bin mdk-server {{args}}
+    cargo nextest run --bin mdkd {{args}}
 
 # Run the server
 run *args:
@@ -142,7 +142,7 @@ grpc-rm method data="{}":
 compose-port service port:
     @docker compose -f "{{ln_dir}}/docker-compose.yml" port {{service}} {{port}} 2>/dev/null | cut -d: -f2
 
-# Run mdk-server against the local lightning-node stack
+# Run mdkd against the local lightning-node stack
 dev: dev-config
     #!/usr/bin/env bash
     set -euo pipefail
@@ -153,7 +153,7 @@ dev: dev-config
     export MDK_MNEMONIC="abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
     cargo run --features demo -- config.toml
 
-# Run mdk-server against staging (mutinynet + staging.moneydevkit.com)
+# Run mdkd against staging (mutinynet + staging.moneydevkit.com)
 dev-staging: dev-staging-config
     #!/usr/bin/env bash
     set -euo pipefail
@@ -199,7 +199,7 @@ dev-staging-config:
       echo ".env template written (fill in MDK_ACCESS_TOKEN and MDK_MNEMONIC)"
     fi
 
-# Wipe mdk-server local state (seed, db, api key)
+# Wipe mdkd local state (seed, db, api key)
 dev-clean:
     rm -rf "{{dev_storage}}"
     rm -f config.toml
@@ -212,7 +212,7 @@ http-password:
     set -a; source .env; set +a
     echo "$MDK_HTTP_PASSWORD_FULL"
 
-# Print the full-access password for the running mdk-server
+# Print the full-access password for the running mdkd
 dev-password:
     @just http-password
 
@@ -249,7 +249,7 @@ dev-status payment_hash:
       -u ":$pw" \
     | jq .
 
-# Show node info for the running mdk-server
+# Show node info for the running mdkd
 dev-get-info:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -268,7 +268,7 @@ e2e: dev-clean
 
     cleanup() {
       if [ -n "${SERVER_PID:-}" ]; then
-        echo "==> Stopping mdk-server (pid $SERVER_PID)..."
+        echo "==> Stopping mdkd (pid $SERVER_PID)..."
         kill "$SERVER_PID" 2>/dev/null || true
         wait "$SERVER_PID" 2>/dev/null || true
       fi
@@ -299,7 +299,7 @@ e2e: dev-clean
     mdk_password="E2eTestPass99"
     signup=$(curl -sS "$mdk_url/api/auth/sign-up/email" \
       -H 'Content-Type: application/json' \
-      -d "{\"email\":\"$mdk_email\",\"password\":\"$mdk_password\",\"name\":\"mdk-server e2e\"}")
+      -d "{\"email\":\"$mdk_email\",\"password\":\"$mdk_password\",\"name\":\"mdkd e2e\"}")
     session=$(echo "$signup" | jq -r '.token // empty')
     if [ -z "$session" ]; then
       echo "FAIL: signup failed"
@@ -311,7 +311,7 @@ e2e: dev-clean
     app=$(curl -sS "$mdk_url/api/mcp/apps" \
       -H 'Content-Type: application/json' \
       -H "Authorization: Bearer $session" \
-      -d '{"name":"mdk-server-e2e","webhookUrl":"http://localhost:8081/webhook"}')
+      -d '{"name":"mdkd-e2e","webhookUrl":"http://localhost:8081/webhook"}')
     mdk_token=$(echo "$app" | jq -r '.apiKey // empty')
     if [ -z "$mdk_token" ]; then
       echo "FAIL: app creation failed"
@@ -373,7 +373,7 @@ e2e: dev-clean
     # ---------------------------------------------------------------
     # Run
     # ---------------------------------------------------------------
-    echo "==> Starting mdk-server (via SOCKS5 proxy on port $socks_port)..."
+    echo "==> Starting mdkd (via SOCKS5 proxy on port $socks_port)..."
     export MDK_MNEMONIC="${MDK_MNEMONIC:-abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about}"
     cargo run --quiet -- --socks-proxy "socks5://127.0.0.1:$socks_port" config.toml &
     SERVER_PID=$!
@@ -511,7 +511,7 @@ e2e: dev-clean
       exit 1
     fi
 
-    # Kill the proxy and confirm mdk-server can no longer reach the API.
+    # Kill the proxy and confirm mdkd can no longer reach the API.
     kill "$PROXY_PID" 2>/dev/null || true
     wait "$PROXY_PID" 2>/dev/null || true
     PROXY_PID=""
