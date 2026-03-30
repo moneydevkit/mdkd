@@ -105,11 +105,11 @@
         );
 
         image = pkgs.dockerTools.buildImage {
-          name = "mdk-server";
+          name = "mdkd";
           tag = "latest";
           copyToRoot = [ staticBin ];
           config = {
-            Entrypoint = [ "/bin/mdk-server" ];
+            Entrypoint = [ "/bin/mdkd" ];
           };
         };
 
@@ -194,7 +194,7 @@
             commonArgs
             // {
               inherit cargoArtifacts;
-              cargoNextestExtraArgs = "--bin mdk-server";
+              cargoNextestExtraArgs = "--bin mdkd";
             }
           );
         };

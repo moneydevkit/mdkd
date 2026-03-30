@@ -125,18 +125,18 @@ pub fn get_default_data_dir() -> Option<PathBuf> {
     #[cfg(target_os = "macos")]
     {
         #[allow(deprecated)]
-        std::env::home_dir().map(|home| home.join("Library/Application Support/mdk-server"))
+        std::env::home_dir().map(|home| home.join("Library/Application Support/mdkd"))
     }
     #[cfg(target_os = "windows")]
     {
         std::env::var("APPDATA")
             .ok()
-            .map(|appdata| PathBuf::from(appdata).join("mdk-server"))
+            .map(|appdata| PathBuf::from(appdata).join("mdkd"))
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         #[allow(deprecated)]
-        std::env::home_dir().map(|home| home.join(".mdk-server"))
+        std::env::home_dir().map(|home| home.join(".mdkd"))
     }
 }
 

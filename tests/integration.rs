@@ -3,7 +3,7 @@ mod common;
 use std::time::Duration;
 
 use common::{
-    fund_lsp, random_mnemonic, setup_payer_lsp_channel, LspNode, MdkServerHandle, PayerNode,
+    fund_lsp, random_mnemonic, setup_payer_lsp_channel, LspNode, MdkdHandle, PayerNode,
     TestBitcoind, WebhookReceiver,
 };
 
@@ -14,11 +14,11 @@ const TEST_MNEMONIC: &str =
 async fn test_mnemonic_deterministic_node_id() {
     let bitcoind = TestBitcoind::new();
 
-    let server1 = MdkServerHandle::start(&bitcoind, None, None, TEST_MNEMONIC).await;
+    let server1 = MdkdHandle::start(&bitcoind, None, None, TEST_MNEMONIC).await;
     let node_id_1 = server1.node_id.clone();
     drop(server1);
 
-    let server2 = MdkServerHandle::start(&bitcoind, None, None, TEST_MNEMONIC).await;
+    let server2 = MdkdHandle::start(&bitcoind, None, None, TEST_MNEMONIC).await;
     let node_id_2 = server2.node_id.clone();
     drop(server2);
 
@@ -32,7 +32,7 @@ async fn test_mnemonic_deterministic_node_id() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_get_info() {
     let bitcoind = TestBitcoind::new();
-    let server = MdkServerHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
+    let server = MdkdHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
 
     let resp: serde_json::Value = server.get("/getinfo").await.json().await.unwrap();
     assert!(!resp["nodeId"].as_str().unwrap().is_empty());
@@ -48,7 +48,7 @@ async fn test_create_and_get_invoice() {
     let lsp = LspNode::new(&bitcoind);
     fund_lsp(&bitcoind, &lsp).await;
 
-    let server = MdkServerHandle::start(&bitcoind, None, Some(&lsp), &random_mnemonic()).await;
+    let server = MdkdHandle::start(&bitcoind, None, Some(&lsp), &random_mnemonic()).await;
 
     let resp = server
         .post_form(
@@ -93,7 +93,7 @@ async fn test_create_and_get_invoice() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_auth_required() {
     let bitcoind = TestBitcoind::new();
-    let server = MdkServerHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
+    let server = MdkdHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
 
     // Request without auth header.
     let resp = reqwest::Client::new()
@@ -116,7 +116,7 @@ async fn test_auth_required() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_invoice_not_found() {
     let bitcoind = TestBitcoind::new();
-    let server = MdkServerHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
+    let server = MdkdHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
 
     let resp = server
         .get("/payments/incoming/0000000000000000000000000000000000000000000000000000000000000000")
@@ -130,7 +130,7 @@ async fn test_payment_flow() {
     let lsp = LspNode::new(&bitcoind);
     fund_lsp(&bitcoind, &lsp).await;
 
-    let server = MdkServerHandle::start(&bitcoind, None, Some(&lsp), &random_mnemonic()).await;
+    let server = MdkdHandle::start(&bitcoind, None, Some(&lsp), &random_mnemonic()).await;
     let payer = PayerNode::new(&bitcoind);
     setup_payer_lsp_channel(&bitcoind, &payer, &lsp, 500_000).await;
 
@@ -237,7 +237,7 @@ async fn test_webhook_delivery() {
     fund_lsp(&bitcoind, &lsp).await;
 
     let webhook = WebhookReceiver::start().await;
-    let server = MdkServerHandle::start(
+    let server = MdkdHandle::start(
         &bitcoind,
         Some(webhook.port),
         Some(&lsp),
@@ -291,7 +291,7 @@ async fn test_webhook_delivery() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_getbalance_empty() {
     let bitcoind = TestBitcoind::new();
-    let server = MdkServerHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
+    let server = MdkdHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
 
     let resp: serde_json::Value = server.get("/getbalance").await.json().await.unwrap();
     assert_eq!(resp["balanceSat"].as_u64().unwrap(), 0);
@@ -304,7 +304,7 @@ async fn test_getbalance_after_payment() {
     let lsp = LspNode::new(&bitcoind);
     fund_lsp(&bitcoind, &lsp).await;
 
-    let server = MdkServerHandle::start(&bitcoind, None, Some(&lsp), &random_mnemonic()).await;
+    let server = MdkdHandle::start(&bitcoind, None, Some(&lsp), &random_mnemonic()).await;
     let payer = PayerNode::new(&bitcoind);
     setup_payer_lsp_channel(&bitcoind, &payer, &lsp, 500_000).await;
 
@@ -362,7 +362,7 @@ async fn test_getbalance_small_payment() {
     let lsp = LspNode::new(&bitcoind);
     fund_lsp(&bitcoind, &lsp).await;
 
-    let server = MdkServerHandle::start(&bitcoind, None, Some(&lsp), &random_mnemonic()).await;
+    let server = MdkdHandle::start(&bitcoind, None, Some(&lsp), &random_mnemonic()).await;
     let payer = PayerNode::new(&bitcoind);
     setup_payer_lsp_channel(&bitcoind, &payer, &lsp, 500_000).await;
 
@@ -414,7 +414,7 @@ async fn test_jit_channel_invoice() {
     let lsp = LspNode::new(&bitcoind);
     fund_lsp(&bitcoind, &lsp).await;
 
-    let server = MdkServerHandle::start(&bitcoind, None, Some(&lsp), &random_mnemonic()).await;
+    let server = MdkdHandle::start(&bitcoind, None, Some(&lsp), &random_mnemonic()).await;
     let payer = PayerNode::new(&bitcoind);
     setup_payer_lsp_channel(&bitcoind, &payer, &lsp, 500_000).await;
 
@@ -503,7 +503,7 @@ async fn test_decodeinvoice() {
     let lsp = LspNode::new(&bitcoind);
     fund_lsp(&bitcoind, &lsp).await;
 
-    let server = MdkServerHandle::start(&bitcoind, None, Some(&lsp), &random_mnemonic()).await;
+    let server = MdkdHandle::start(&bitcoind, None, Some(&lsp), &random_mnemonic()).await;
 
     // Create an invoice to decode.
     let created: serde_json::Value = server
@@ -545,7 +545,7 @@ async fn test_decodeinvoice() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_decodeinvoice_invalid() {
     let bitcoind = TestBitcoind::new();
-    let server = MdkServerHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
+    let server = MdkdHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
 
     let resp = server
         .post_form("/decodeinvoice", &[("invoice", "not-a-real-invoice")])
@@ -559,7 +559,7 @@ async fn test_decodeinvoice_invalid() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_decodeinvoice_missing_param() {
     let bitcoind = TestBitcoind::new();
-    let server = MdkServerHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
+    let server = MdkdHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
 
     // POST with empty form body — axum returns 422 for missing fields.
     let resp = server.post_form("/decodeinvoice", &[]).await;
@@ -576,7 +576,7 @@ async fn test_list_incoming_payments() {
     let lsp = LspNode::new(&bitcoind);
     fund_lsp(&bitcoind, &lsp).await;
 
-    let server = MdkServerHandle::start(&bitcoind, None, Some(&lsp), &random_mnemonic()).await;
+    let server = MdkdHandle::start(&bitcoind, None, Some(&lsp), &random_mnemonic()).await;
     let payer = PayerNode::new(&bitcoind);
     setup_payer_lsp_channel(&bitcoind, &payer, &lsp, 500_000).await;
 
@@ -712,7 +712,7 @@ async fn test_list_incoming_payments() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_listchannels_empty() {
     let bitcoind = TestBitcoind::new();
-    let server = MdkServerHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
+    let server = MdkdHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
 
     let channels: Vec<serde_json::Value> = server.get("/listchannels").await.json().await.unwrap();
     assert!(channels.is_empty());
@@ -724,7 +724,7 @@ async fn test_listchannels_and_closechannel() {
     let lsp = LspNode::new(&bitcoind);
     fund_lsp(&bitcoind, &lsp).await;
 
-    let server = MdkServerHandle::start(&bitcoind, None, Some(&lsp), &random_mnemonic()).await;
+    let server = MdkdHandle::start(&bitcoind, None, Some(&lsp), &random_mnemonic()).await;
     let payer = PayerNode::new(&bitcoind);
     setup_payer_lsp_channel(&bitcoind, &payer, &lsp, 500_000).await;
 
@@ -825,7 +825,7 @@ async fn test_listchannels_and_closechannel() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_closechannel_not_found() {
     let bitcoind = TestBitcoind::new();
-    let server = MdkServerHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
+    let server = MdkdHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
 
     let resp = server
         .post_form(
@@ -842,7 +842,7 @@ async fn test_closechannel_not_found() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_closechannel_invalid_hex() {
     let bitcoind = TestBitcoind::new();
-    let server = MdkServerHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
+    let server = MdkdHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
 
     let resp = server
         .post_form("/closechannel", &[("channelId", "not-hex")])
@@ -856,7 +856,7 @@ async fn test_getbalance_onchain_after_close() {
     let lsp = LspNode::new(&bitcoind);
     fund_lsp(&bitcoind, &lsp).await;
 
-    let server = MdkServerHandle::start(&bitcoind, None, Some(&lsp), &random_mnemonic()).await;
+    let server = MdkdHandle::start(&bitcoind, None, Some(&lsp), &random_mnemonic()).await;
     let payer = PayerNode::new(&bitcoind);
     setup_payer_lsp_channel(&bitcoind, &payer, &lsp, 500_000).await;
 
@@ -950,7 +950,7 @@ async fn test_getbalance_onchain_after_close() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_sendtoaddress_invalid_address() {
     let bitcoind = TestBitcoind::new();
-    let server = MdkServerHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
+    let server = MdkdHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
 
     let resp = server
         .post_form(
@@ -971,7 +971,7 @@ async fn test_sendtoaddress_invalid_address() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_sendtoaddress_missing_params() {
     let bitcoind = TestBitcoind::new();
-    let server = MdkServerHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
+    let server = MdkdHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
 
     // Missing all required params.
     let resp = server.post_form("/sendtoaddress", &[]).await;
@@ -985,7 +985,7 @@ async fn test_sendtoaddress_missing_params() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_sendtoaddress_insufficient_funds() {
     let bitcoind = TestBitcoind::new();
-    let server = MdkServerHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
+    let server = MdkdHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
 
     // Valid regtest address but no on-chain funds.
     let resp = server
@@ -1010,7 +1010,7 @@ async fn test_sendtoaddress_success() {
     let lsp = LspNode::new(&bitcoind);
     fund_lsp(&bitcoind, &lsp).await;
 
-    let server = MdkServerHandle::start(&bitcoind, None, Some(&lsp), &random_mnemonic()).await;
+    let server = MdkdHandle::start(&bitcoind, None, Some(&lsp), &random_mnemonic()).await;
     let payer = PayerNode::new(&bitcoind);
     setup_payer_lsp_channel(&bitcoind, &payer, &lsp, 500_000).await;
 
@@ -1166,7 +1166,7 @@ async fn test_sendtoaddress_success() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_openapi_scalar() {
     let bitcoind = TestBitcoind::new();
-    let server = MdkServerHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
+    let server = MdkdHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
 
     // /scalar is outside the auth middleware — no credentials needed.
     let resp = reqwest::Client::new()
@@ -1193,7 +1193,7 @@ const BOLT12_OFFER: &str =
 #[tokio::test(flavor = "multi_thread")]
 async fn test_decodeoffer() {
     let bitcoind = TestBitcoind::new();
-    let server = MdkServerHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
+    let server = MdkdHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
 
     let resp = server
         .post_form("/decodeoffer", &[("offer", BOLT12_OFFER)])
@@ -1216,7 +1216,7 @@ async fn test_decodeoffer() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_decodeoffer_invalid() {
     let bitcoind = TestBitcoind::new();
-    let server = MdkServerHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
+    let server = MdkdHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
 
     let resp = server
         .post_form("/decodeoffer", &[("offer", "not-a-real-offer")])

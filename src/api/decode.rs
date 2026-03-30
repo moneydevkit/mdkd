@@ -203,7 +203,7 @@ mod tests {
         OfferBuilder::new(pubkey)
             .amount_msats(250_000_000)
             .description("1 cup coffee".to_string())
-            .issuer("mdk-server test".to_string())
+            .issuer("mdkd test".to_string())
             .build()
             .unwrap()
             .to_string()
@@ -218,7 +218,7 @@ mod tests {
         assert_eq!(resp.amount_msat, Some(250_000_000));
         assert_eq!(resp.amount, Some(250_000));
         assert_eq!(resp.description.as_deref(), Some("1 cup coffee"));
-        assert_eq!(resp.issuer.as_deref(), Some("mdk-server test"));
+        assert_eq!(resp.issuer.as_deref(), Some("mdkd test"));
         assert!(resp.node_id.is_some());
         assert_eq!(resp.node_id.as_deref().unwrap().len(), 66);
     }

@@ -36,7 +36,7 @@ use crate::mdk::client::MdkApiClient;
 use crate::store::invoice_metadata::InvoiceMetadataStore;
 
 #[derive(Parser)]
-#[command(version, about = "MDK Server")]
+#[command(version, about = "mdkd - MDK daemon")]
 struct Args {
     /// Path to config.toml
     config_file: String,
