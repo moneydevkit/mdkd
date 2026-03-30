@@ -28,8 +28,8 @@ use crate::store::invoice_metadata::InvoiceMetadataStore;
 use crate::types::{
     ApiError, ChannelInfo, CloseChannelRequest, CreateInvoiceRequest, CreateInvoiceResponse,
     DecodeInvoiceRequest, DecodeInvoiceResponse, DecodeOfferRequest, DecodeOfferResponse,
-    GetBalanceResponse, GetInfoResponse, IncomingPaymentResponse, ListPaymentsRequest,
-    SendToAddressRequest,
+    GetBalanceResponse, GetInfoResponse, IncomingPaymentResponse, ListOutgoingPaymentsRequest,
+    ListPaymentsRequest, OutgoingPaymentResponse, SendToAddressRequest,
 };
 
 #[derive(Clone)]
@@ -75,6 +75,8 @@ pub fn router(state: AppState) -> Router {
         .routes(routes!(list_channels))
         .routes(routes!(list_incoming_payments))
         .routes(routes!(get_incoming_payment))
+        .routes(routes!(list_outgoing_payments))
+        .routes(routes!(get_outgoing_payment))
         .routes(routes!(decode_invoice))
         .routes(routes!(decode_offer));
 
@@ -262,5 +264,37 @@ async fn send_to_address(
     State(state): State<AppState>,
     Form(req): Form<SendToAddressRequest>,
 ) -> Result<String, AppError> {
-    onchain::handle_send_to_address(state.node, &req).await
+    onchain::handle_send_to_address(state.node, state.metadata_store, &req).await
+}
+
+#[utoipa::path(
+    get, path = "/payments/outgoing", tag = "payments",
+    params(ListOutgoingPaymentsRequest),
+    responses(
+        (status = 200, body = Vec<OutgoingPaymentResponse>),
+        (status = 500, body = ApiError),
+    ),
+    security(("basic_auth" = []))
+)]
+async fn list_outgoing_payments(
+    State(state): State<AppState>,
+    Query(params): Query<ListOutgoingPaymentsRequest>,
+) -> Result<Json<Vec<OutgoingPaymentResponse>>, AppError> {
+    invoices::handle_list_outgoing_payments(state.node, state.metadata_store, &params).await
+}
+
+#[utoipa::path(
+    get, path = "/payments/outgoing/{payment_id}", tag = "payments",
+    params(("payment_id" = String, Path, description = "Hex-encoded payment ID")),
+    responses(
+        (status = 200, body = OutgoingPaymentResponse),
+        (status = 404, body = ApiError),
+    ),
+    security(("basic_auth" = []))
+)]
+async fn get_outgoing_payment(
+    State(state): State<AppState>,
+    path: Path<String>,
+) -> Result<Json<OutgoingPaymentResponse>, AppError> {
+    invoices::handle_get_outgoing_payment(state.node, path).await
 }

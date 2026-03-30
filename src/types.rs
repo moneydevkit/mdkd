@@ -117,6 +117,40 @@ pub struct IncomingPaymentResponse {
     pub expires_at: Option<u64>,
 }
 
+#[derive(Deserialize, ToSchema, IntoParams)]
+#[into_params(parameter_in = Query)]
+#[serde(rename_all = "camelCase")]
+pub struct ListOutgoingPaymentsRequest {
+    pub limit: Option<u64>,
+    pub offset: Option<u64>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OutgoingPaymentResponse {
+    pub id: String,
+    pub kind: OutgoingPaymentKind,
+    pub status: OutgoingPaymentStatus,
+    pub amount_sat: Option<u64>,
+    pub fee_sat: Option<u64>,
+    pub updated_at: u64,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum OutgoingPaymentKind {
+    Onchain { txid: String },
+    Lightning { payment_hash: String },
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum OutgoingPaymentStatus {
+    Pending,
+    Succeeded,
+    Failed,
+}
+
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GetBalanceResponse {

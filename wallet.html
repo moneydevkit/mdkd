@@ -210,6 +210,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 
 /* --- Truncate --- */
 .truncate { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: bottom; }
+.copyable:hover { color: var(--orange); text-decoration: underline; }
 @media (max-width: 600px) { .truncate { max-width: 100px; } }
 
 /* --- Filters --- */
@@ -366,6 +367,27 @@ tr:hover td { background: rgba(255,255,255,0.02); }
         <span class="page-info" id="pay-page-info"></span>
         <button class="btn btn-outline btn-sm" id="pay-next">Next</button>
       </div>
+
+      <div style="margin-top:32px;">
+        <div class="section-header">
+          <h2>Outgoing Payments</h2>
+          <button class="btn btn-outline btn-sm" id="btn-refresh-outgoing">Refresh</button>
+        </div>
+        <div id="outgoing-empty" class="hidden" style="color:var(--fg2);text-align:center;padding:40px 0;">No outgoing payments found.</div>
+        <div class="table-wrap">
+          <table id="outgoing-table" class="hidden">
+            <thead>
+              <tr><th>Status</th><th>Type</th><th>Amount</th><th>Fee</th><th>Updated</th><th>ID</th></tr>
+            </thead>
+            <tbody id="outgoing-body"></tbody>
+          </table>
+        </div>
+        <div class="pagination" id="outgoing-pagination">
+          <button class="btn btn-outline btn-sm" id="out-prev">Prev</button>
+          <span class="page-info" id="out-page-info"></span>
+          <button class="btn btn-outline btn-sm" id="out-next">Next</button>
+        </div>
+      </div>
     </div>
 
     <!-- Decode -->
@@ -437,6 +459,8 @@ let state = {
   refreshTimer: null,
   payPage: 0,
   payPageSize: 20,
+  outPage: 0,
+  outPageSize: 20,
 };
 
 // ─── DOM helpers ───
@@ -843,6 +867,54 @@ async function refreshPayments() {
   }
 }
 
+// ─── Outgoing Payments ───
+async function refreshOutgoing() {
+  try {
+    const offset = state.outPage * state.outPageSize;
+    const path = `/payments/outgoing?limit=${state.outPageSize}&offset=${offset}`;
+    const payments = await api('GET', path);
+    const body = $('#outgoing-body');
+    body.innerHTML = '';
+
+    if (payments.length === 0 && state.outPage === 0) {
+      show($('#outgoing-empty'));
+      hide($('#outgoing-table'));
+      hide($('#outgoing-pagination'));
+      return;
+    }
+
+    hide($('#outgoing-empty'));
+    show($('#outgoing-table'));
+    show($('#outgoing-pagination'));
+
+    for (const p of payments) {
+      const badgeClass = p.status === 'succeeded' ? 'badge-paid' : p.status === 'failed' ? 'badge-expired' : 'badge-pending';
+      const label = p.status.toUpperCase();
+      const isOnchain = p.kind.onchain != null;
+      const typeLabel = isOnchain ? 'On-chain' : 'Lightning';
+      const txid = isOnchain ? p.kind.onchain.txid : (p.kind.lightning ? p.kind.lightning.paymentHash : p.id);
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><span class="badge ${badgeClass}">${label}</span></td>
+        <td>${typeLabel}</td>
+        <td>${p.amountSat != null ? formatSats(p.amountSat) + ' sats' : '-'}</td>
+        <td>${p.feeSat != null ? formatSats(p.feeSat) + ' sats' : '-'}</td>
+        <td style="white-space:nowrap;">${formatTime(p.updatedAt)}</td>
+        <td><span class="truncate mono copyable" title="${txid}" style="cursor:pointer;" data-copy="${txid}">${truncateHash(txid)}</span></td>
+      `;
+      body.appendChild(tr);
+    }
+
+    const start = offset + 1;
+    const end = offset + payments.length;
+    $('#out-page-info').textContent = `${start}-${end}`;
+    $('#out-prev').disabled = state.outPage === 0;
+    $('#out-next').disabled = payments.length < state.outPageSize;
+  } catch (e) {
+    console.error('Outgoing payments refresh failed:', e);
+  }
+}
+
 // ─── Decode ───
 async function decodeInput() {
   const input = $('#decode-input').value.trim();
@@ -924,6 +996,7 @@ async function sendOnchain() {
       $('#send-amount').value = '';
       $('#send-feerate').value = '';
       refreshDashboard();
+      refreshOutgoing();
     } catch (e) {
       showFormError('send-error', e.message);
     } finally {
@@ -964,7 +1037,7 @@ function switchTab(name) {
   });
   // Lazy load data on tab switch
   if (name === 'channels') refreshChannels();
-  if (name === 'payments') refreshPayments();
+  if (name === 'payments') { refreshPayments(); refreshOutgoing(); }
 }
 
 // ─── Event Wiring ───
@@ -1015,6 +1088,15 @@ document.addEventListener('DOMContentLoaded', () => {
   $('#pay-show-all').addEventListener('change', () => { state.payPage = 0; refreshPayments(); });
   $('#pay-prev').addEventListener('click', () => { if (state.payPage > 0) { state.payPage--; refreshPayments(); } });
   $('#pay-next').addEventListener('click', () => { state.payPage++; refreshPayments(); });
+
+  // Outgoing Payments - copy txid on click
+  $('#outgoing-body').addEventListener('click', (e) => {
+    const el = e.target.closest('.copyable');
+    if (el) copyText(el.dataset.copy);
+  });
+  $('#btn-refresh-outgoing').addEventListener('click', refreshOutgoing);
+  $('#out-prev').addEventListener('click', () => { if (state.outPage > 0) { state.outPage--; refreshOutgoing(); } });
+  $('#out-next').addEventListener('click', () => { state.outPage++; refreshOutgoing(); });
 
   // Decode
   $('#btn-decode').addEventListener('click', decodeInput);
