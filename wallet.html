@@ -888,19 +888,19 @@ async function refreshOutgoing() {
     show($('#outgoing-pagination'));
 
     for (const p of payments) {
-      const badgeClass = p.status === 'succeeded' ? 'badge-paid' : p.status === 'failed' ? 'badge-expired' : 'badge-pending';
-      const label = p.status.toUpperCase();
-      const isOnchain = p.kind.onchain != null;
+      const badgeClass = p.isPaid ? 'badge-paid' : (p.completedAt != null ? 'badge-expired' : 'badge-pending');
+      const label = p.isPaid ? 'SUCCEEDED' : (p.completedAt != null ? 'FAILED' : 'PENDING');
+      const isOnchain = p.txId != null;
       const typeLabel = isOnchain ? 'On-chain' : 'Lightning';
-      const txid = isOnchain ? p.kind.onchain.txid : (p.kind.lightning ? p.kind.lightning.paymentHash : p.id);
+      const copyId = p.txId || p.paymentHash || p.paymentId;
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><span class="badge ${badgeClass}">${label}</span></td>
         <td>${typeLabel}</td>
-        <td>${p.amountSat != null ? formatSats(p.amountSat) + ' sats' : '-'}</td>
-        <td>${p.feeSat != null ? formatSats(p.feeSat) + ' sats' : '-'}</td>
-        <td style="white-space:nowrap;">${formatTime(p.updatedAt)}</td>
-        <td><span class="truncate mono copyable" title="${txid}" style="cursor:pointer;" data-copy="${txid}">${truncateHash(txid)}</span></td>
+        <td>${p.sent != null ? formatSats(p.sent) + ' sats' : '-'}</td>
+        <td>${p.fees != null ? formatSats(p.fees) + ' sats' : '-'}</td>
+        <td style="white-space:nowrap;">${formatTime(p.createdAt)}</td>
+        <td><span class="truncate mono copyable" title="${copyId}" style="cursor:pointer;" data-copy="${copyId}">${truncateHash(copyId)}</span></td>
       `;
       body.appendChild(tr);
     }

@@ -19,8 +19,7 @@ use crate::mdk::types::{CheckoutCustomer, CreateCheckoutRequest, RegisterInvoice
 use crate::store::invoice_metadata::{InvoiceMetadata, InvoiceMetadataStore};
 use crate::types::{
     CreateInvoiceRequest, CreateInvoiceResponse, IncomingPaymentResponse,
-    ListOutgoingPaymentsRequest, ListPaymentsRequest, OutgoingPaymentKind, OutgoingPaymentResponse,
-    OutgoingPaymentStatus,
+    ListOutgoingPaymentsRequest, ListPaymentsRequest, OutgoingPaymentResponse,
 };
 
 /// Cap to keep BOLT11 invoices compact (smaller QR codes).
@@ -266,8 +265,12 @@ pub async fn handle_list_outgoing_payments(
     metadata_store: Arc<InvoiceMetadataStore>,
     params: &ListOutgoingPaymentsRequest,
 ) -> Result<Json<Vec<OutgoingPaymentResponse>>, AppError> {
+    let now = crate::time::seconds_since_epoch();
+    let from = params.from.unwrap_or(0);
+    let to = params.to.unwrap_or(now);
     let limit = params.limit.unwrap_or(20) as usize;
     let offset = params.offset.unwrap_or(0) as usize;
+    let all = params.all.unwrap_or(false);
 
     // Start with LDK's outbound payments.
     let mut payments: Vec<OutgoingPaymentResponse> = node
@@ -277,32 +280,39 @@ pub async fn handle_list_outgoing_payments(
         .collect();
 
     // Collect txids already known to LDK.
-    let known_txids: std::collections::HashSet<String> = payments
-        .iter()
-        .filter_map(|p| match &p.kind {
-            OutgoingPaymentKind::Onchain { txid } => Some(txid.clone()),
-            _ => None,
-        })
-        .collect();
+    let known_txids: std::collections::HashSet<String> =
+        payments.iter().filter_map(|p| p.tx_id.clone()).collect();
 
     // Merge locally stored sends that LDK hasn't picked up yet.
     if let Ok(local_sends) = metadata_store.list_outgoing_sends() {
         for send in local_sends {
             if !known_txids.contains(&send.txid) {
                 payments.push(OutgoingPaymentResponse {
-                    id: send.txid.clone(),
-                    kind: OutgoingPaymentKind::Onchain { txid: send.txid },
-                    status: OutgoingPaymentStatus::Pending,
-                    amount_sat: Some(send.amount_sat),
-                    fee_sat: send.fee_sat,
-                    updated_at: send.created_at,
+                    payment_id: send.txid.clone(),
+                    payment_hash: None,
+                    preimage: None,
+                    tx_id: Some(send.txid),
+                    is_paid: false,
+                    sent: Some(send.amount_sat),
+                    fees: send.fee_sat,
+                    invoice: None,
+                    completed_at: None,
+                    created_at: send.created_at,
                 });
             }
         }
     }
 
+    // Filter by time range.
+    payments.retain(|p| p.created_at >= from && p.created_at <= to);
+
+    // Filter out failed unless `all=true`.
+    if !all {
+        payments.retain(|p| p.is_paid || p.completed_at.is_none());
+    }
+
     // Newest first.
-    payments.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    payments.sort_by(|a, b| b.created_at.cmp(&a.created_at));
 
     let page = payments.into_iter().skip(offset).take(limit).collect();
     Ok(Json(page))
@@ -327,42 +337,50 @@ pub async fn handle_get_outgoing_payment(
 }
 
 fn payment_to_outgoing(p: &PaymentDetails) -> OutgoingPaymentResponse {
-    let kind = match &p.kind {
-        PaymentKind::Onchain { txid, .. } => OutgoingPaymentKind::Onchain {
-            txid: txid.to_string(),
-        },
-        other => {
-            let hash = match other {
-                PaymentKind::Bolt11 { hash, .. }
-                | PaymentKind::Bolt11Jit { hash, .. }
-                | PaymentKind::Spontaneous { hash, .. } => hash.to_string(),
-                PaymentKind::Bolt12Offer { hash, .. } | PaymentKind::Bolt12Refund { hash, .. } => {
-                    hash.map(|h| h.to_string()).unwrap_or_default()
-                }
-                PaymentKind::Onchain { .. } => unreachable!(),
-            };
-            OutgoingPaymentKind::Lightning { payment_hash: hash }
-        }
+    let (payment_hash, preimage, tx_id) = match &p.kind {
+        PaymentKind::Onchain { txid, .. } => (None, None, Some(txid.to_string())),
+        PaymentKind::Bolt11 { hash, preimage, .. }
+        | PaymentKind::Bolt11Jit { hash, preimage, .. } => (
+            Some(hash.to_string()),
+            preimage.map(|pi| format!("{pi}")),
+            None,
+        ),
+        PaymentKind::Spontaneous { hash, preimage, .. } => (
+            Some(hash.to_string()),
+            preimage.map(|pi| format!("{pi}")),
+            None,
+        ),
+        PaymentKind::Bolt12Offer { hash, preimage, .. }
+        | PaymentKind::Bolt12Refund { hash, preimage, .. } => (
+            hash.map(|h| h.to_string()),
+            preimage.map(|pi| format!("{pi}")),
+            None,
+        ),
     };
 
-    let status = match p.status {
-        PaymentStatus::Pending => OutgoingPaymentStatus::Pending,
-        PaymentStatus::Succeeded => OutgoingPaymentStatus::Succeeded,
-        PaymentStatus::Failed => OutgoingPaymentStatus::Failed,
+    let is_paid = p.status == PaymentStatus::Succeeded;
+    let completed_at = if p.status != PaymentStatus::Pending {
+        Some(p.latest_update_timestamp)
+    } else {
+        None
     };
 
     OutgoingPaymentResponse {
-        id: p
+        payment_id: p
             .id
             .0
             .iter()
             .map(|b| format!("{b:02x}"))
             .collect::<String>(),
-        kind,
-        status,
-        amount_sat: p.amount_msat.map(|m| m / 1000),
-        fee_sat: p.fee_paid_msat.map(|m| m / 1000),
-        updated_at: p.latest_update_timestamp,
+        payment_hash,
+        preimage,
+        tx_id,
+        is_paid,
+        sent: p.amount_msat.map(|m| m / 1000),
+        fees: p.fee_paid_msat.map(|m| m / 1000),
+        invoice: None,
+        completed_at,
+        created_at: p.latest_update_timestamp,
     }
 }
 
