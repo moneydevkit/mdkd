@@ -155,7 +155,8 @@ checked. If neither is present the process exits with an error.
 ### Generating secrets
 
 **MDK_ACCESS_TOKEN** -- sign in to [moneydevkit.com](https://moneydevkit.com),
-create an app, and copy the API key.
+create an app, and copy the API key. Note that you do not need to specify a real
+domain when using this daemon. `https://localhost` will suffice.
 
 **MDK_MNEMONIC** -- Same as above but hit `Generate Mnemonic` instead of copying the key or
 generate your own fresh BIP-39 mnemonic. Back it up offline. This is your wallet seed.
