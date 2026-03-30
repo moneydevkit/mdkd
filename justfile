@@ -119,9 +119,6 @@ dev-staging-config:
 
     [log]
     level = "Debug"
-
-    [esplora]
-    server_url = "$ESPLORA_URL"
     TOML
     echo "config.toml written (staging/signet)"
     echo "  esplora     $ESPLORA_URL"
@@ -511,13 +508,12 @@ dev-config:
 
     [log]
     level = "Debug"
-
-    [bitcoind]
-    rpc_address = "127.0.0.1:${btc_port}"
-    rpc_user = "bitcoind"
-    rpc_password = "bitcoind"
     TOML
     cat > .env << ENV
+    MDK_BITCOIND_RPC_HOST=127.0.0.1
+    MDK_BITCOIND_RPC_PORT=${btc_port}
+    MDK_BITCOIND_RPC_USER=bitcoind
+    MDK_BITCOIND_RPC_PASSWORD=bitcoind
     MDK_LSP_NODE_ID=${n1_pubkey}
     MDK_LSP_ADDRESS=127.0.0.1:${n1_p2p}
     MDK_API_BASE_URL=${MDK_API_BASE_URL:-http://localhost:3900/rpc}

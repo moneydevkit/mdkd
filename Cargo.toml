@@ -7,8 +7,8 @@ edition = "2021"
 demo = []
 
 [dependencies]
-ldk-server = { git = "https://github.com/moneydevkit/ldk-server", rev = "44178d75d509b0156c9e371e190292b3f4930f18" }
-ldk-server-protos = { git = "https://github.com/moneydevkit/ldk-server", rev = "44178d75d509b0156c9e371e190292b3f4930f18" }
+ldk-server = { git = "https://github.com/moneydevkit/ldk-server", rev = "a17acc8f0b0c7803562ffdfa2e7cc87f85b12c31" }
+ldk-server-protos = { git = "https://github.com/moneydevkit/ldk-server", rev = "a17acc8f0b0c7803562ffdfa2e7cc87f85b12c31" }
 
 axum = { version = "0.8", features = ["json", "ws"] }
 utoipa = { version = "5.4", features = ["axum_extras"] }

@@ -23,7 +23,7 @@ use ldk_server::ldk_node::bitcoin::secp256k1::PublicKey;
 use ldk_server::ldk_node::config::Config as LdkNodeConfig;
 use ldk_server::ldk_node::lightning::ln::msgs::SocketAddress;
 use ldk_server::ldk_node::Builder;
-use ldk_server::util::config::{get_default_data_dir, load_config, ChainSource};
+use ldk_server::util::config::{get_default_data_dir, load_config};
 use ldk_server::util::logger::ServerLogger;
 use log::{error, info};
 use reqwest::{Client, Proxy};
@@ -31,7 +31,7 @@ use tokio::signal::unix::SignalKind;
 use tokio::sync::broadcast;
 
 use crate::api::{AppState, HttpAuth};
-use crate::config::NetworkInfra;
+use crate::config::{ChainSource, NetworkInfra};
 use crate::mdk::client::MdkApiClient;
 use crate::store::invoice_metadata::InvoiceMetadataStore;
 
@@ -138,7 +138,6 @@ fn main() {
     // Optional SOCKS5 proxy for all outbound traffic.
     let socks_proxy_url = args.socks_proxy;
     let socks_proxy_addr = socks_proxy_url.as_ref().map(|raw| {
-        // Expected format: socks5://host:port — strip the scheme and resolve.
         let host_port = raw
             .strip_prefix("socks5://")
             .or_else(|| raw.strip_prefix("socks5h://"))
@@ -182,20 +181,22 @@ fn main() {
         }
     }
 
-    match config_file.chain_source {
-        ChainSource::Rpc {
+    match infra.chain_source() {
+        ChainSource::Esplora(server_url) => {
+            builder.set_chain_source_esplora(server_url.to_string(), None);
+        }
+        ChainSource::Bitcoind {
             rpc_host,
             rpc_port,
             rpc_user,
             rpc_password,
         } => {
-            builder.set_chain_source_bitcoind_rpc(rpc_host, rpc_port, rpc_user, rpc_password);
-        }
-        ChainSource::Electrum { server_url } => {
-            builder.set_chain_source_electrum(server_url, None);
-        }
-        ChainSource::Esplora { server_url } => {
-            builder.set_chain_source_esplora(server_url, None);
+            builder.set_chain_source_bitcoind_rpc(
+                rpc_host.clone(),
+                *rpc_port,
+                rpc_user.clone(),
+                rpc_password.clone(),
+            );
         }
     }
 
