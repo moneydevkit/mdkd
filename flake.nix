@@ -151,13 +151,27 @@
               doCheck = false; # Tests run in checks.test
             }
           );
-          integration-test = craneLib.cargoNextest (
-            commonArgs
-            // {
-              inherit cargoArtifacts;
-              cargoNextestExtraArgs = "--test integration";
-            }
-          );
+          # Wrapper script that runs `just integration-test` with all
+          # dependencies available.  Intended for CI (`nix run .#integration-test`).
+          integration-test = pkgs.writeShellApplication {
+            name = "integration-test";
+            runtimeInputs = [
+              buildToolchain
+              pkgs.cargo-nextest
+              pkgs.just
+              pkgs.postgresql_16
+              pkgs.curl
+              pkgs.protobuf
+              pkgsUnstable.bitcoind
+              vss
+            ];
+            text = ''
+              export BITCOIND_EXE="${pkgsUnstable.bitcoind}/bin/bitcoind"
+              export VSS_EXE="${vss}/bin/vss-server"
+              export NIX_SYSTEM="${system}"
+              just integration-test "$@"
+            '';
+          };
           inherit vss;
         }
         // lib.optionalAttrs isLinux {

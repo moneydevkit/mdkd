@@ -86,7 +86,7 @@ integration-test *args:
     else
       echo ""
       echo "==> VSS server log (on failure):"
-      cat "$vss_log"
+      # cat "$vss_log" skip this for now
       exit 1
     fi
 
