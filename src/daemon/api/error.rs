@@ -2,7 +2,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 
-use crate::types::ApiError;
+use crate::daemon::types::ApiError;
 
 #[derive(Debug)]
 pub enum AppError {

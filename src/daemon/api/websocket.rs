@@ -6,7 +6,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
 use tokio::sync::broadcast;
 
-use crate::api::auth::HttpAuth;
+use crate::daemon::api::auth::HttpAuth;
 
 #[derive(Clone)]
 pub struct WsState {

@@ -1,2 +1,2 @@
-pub mod client;
-pub mod types;
+pub mod config;
+pub mod mdk_api;

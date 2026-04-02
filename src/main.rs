@@ -1,14 +1,4 @@
-mod api;
-mod config;
-mod event_loop;
-mod expiry;
-mod logger;
-mod mdk;
-mod secret;
-mod store;
-mod time;
-mod types;
-mod webhook;
+mod daemon;
 
 use std::collections::HashMap;
 use std::net::ToSocketAddrs;
@@ -26,14 +16,15 @@ use ldk_node::config::Config as LdkNodeConfig;
 use ldk_node::lightning::ln::msgs::SocketAddress;
 use ldk_node::Builder;
 use log::{error, info};
+use mdk::config::{ChainSource, NetworkInfra};
+use mdk::mdk_api::client::MdkApiClient;
 use reqwest::{Client, Proxy};
 use tokio::signal::unix::SignalKind;
 use tokio::sync::broadcast;
 
-use crate::api::{AppState, HttpAuth};
-use crate::config::{get_default_data_dir, load_config, ChainSource, NetworkInfra};
-use crate::mdk::client::MdkApiClient;
-use crate::store::invoice_metadata::InvoiceMetadataStore;
+use daemon::api::{AppState, HttpAuth};
+use daemon::config::{get_default_data_dir, load_config};
+use daemon::store::invoice_metadata::InvoiceMetadataStore;
 
 #[derive(Parser)]
 #[command(version, about = "mdkd - MDK daemon")]
@@ -81,7 +72,7 @@ fn main() {
 
     // Resolve secrets: FD flags take precedence, env vars as fallback.
     let resolve = |name, fd| {
-        secret::try_resolve(name, fd).unwrap_or_else(|e| {
+        daemon::secret::try_resolve(name, fd).unwrap_or_else(|e| {
             eprintln!("{e}");
             std::process::exit(1);
         })
@@ -124,7 +115,7 @@ fn main() {
         std::process::exit(1);
     }
 
-    logger::init(config_file.log_level);
+    daemon::logger::init(config_file.log_level);
 
     // Optional SOCKS5 proxy for all outbound traffic.
     let socks_proxy_url = args.socks_proxy;
@@ -322,7 +313,7 @@ fn main() {
             event_tx: event_tx.clone(),
         };
 
-        let app = api::router(app_state);
+        let app = daemon::api::router(app_state);
 
         let listener = match tokio::net::TcpListener::bind(bind_addr).await {
             Ok(l) => l,
@@ -339,7 +330,7 @@ fn main() {
         let expiry_client = http_client.clone();
 
         tokio::spawn(async move {
-            expiry::run_expiry_monitor(expiry_metadata, expiry_secret, expiry_client).await;
+            daemon::expiry::run_expiry_monitor(expiry_metadata, expiry_secret, expiry_client).await;
         });
 
         let event_node = Arc::clone(&node);
@@ -349,7 +340,7 @@ fn main() {
         let event_mdk_client = mdk_client.clone();
 
         tokio::spawn(async move {
-            event_loop::run_event_loop(
+            daemon::event_loop::run_event_loop(
                 event_node,
                 event_metadata,
                 event_secret,

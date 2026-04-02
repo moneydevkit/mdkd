@@ -5,7 +5,7 @@ use hmac::{Hmac, Mac};
 use log::{error, info};
 use sha2::Sha256;
 
-use crate::types::WebhookEvent;
+use crate::daemon::types::WebhookEvent;
 
 type HmacSha256 = Hmac<Sha256>;
 

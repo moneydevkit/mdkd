@@ -22,10 +22,11 @@ use utoipa_scalar::{Scalar, Servable};
 
 pub use auth::HttpAuth;
 
-use crate::api::error::AppError;
-use crate::mdk::client::MdkApiClient;
-use crate::store::invoice_metadata::InvoiceMetadataStore;
-use crate::types::{
+use mdk::mdk_api::client::MdkApiClient;
+
+use crate::daemon::api::error::AppError;
+use crate::daemon::store::invoice_metadata::InvoiceMetadataStore;
+use crate::daemon::types::{
     ApiError, ChannelInfo, CloseChannelRequest, CreateInvoiceRequest, CreateInvoiceResponse,
     DecodeInvoiceRequest, DecodeInvoiceResponse, DecodeOfferRequest, DecodeOfferResponse,
     GetBalanceResponse, GetInfoResponse, IncomingPaymentResponse, ListOutgoingPaymentsRequest,
@@ -107,7 +108,7 @@ pub fn router(state: AppState) -> Router {
 
     #[cfg(feature = "demo")]
     let router = {
-        const DEMO_HTML: &str = include_str!("../../wallet.html");
+        const DEMO_HTML: &str = include_str!("../../../wallet.html");
         router.route(
             "/",
             axum::routing::get(|| async { axum::response::Html(DEMO_HTML) }),

@@ -13,11 +13,12 @@ use ldk_node::payment::{PaymentDetails, PaymentDirection, PaymentKind, PaymentSt
 use ldk_node::Node;
 use log::{error, info};
 
-use crate::api::error::AppError;
-use crate::mdk::client::MdkApiClient;
-use crate::mdk::types::{CheckoutCustomer, CreateCheckoutRequest, RegisterInvoiceRequest};
-use crate::store::invoice_metadata::{InvoiceMetadata, InvoiceMetadataStore};
-use crate::types::{
+use mdk::mdk_api::client::MdkApiClient;
+use mdk::mdk_api::types::{CheckoutCustomer, CreateCheckoutRequest, RegisterInvoiceRequest};
+
+use crate::daemon::api::error::AppError;
+use crate::daemon::store::invoice_metadata::{InvoiceMetadata, InvoiceMetadataStore};
+use crate::daemon::types::{
     CreateInvoiceRequest, CreateInvoiceResponse, IncomingPaymentResponse,
     ListOutgoingPaymentsRequest, ListPaymentsRequest, OutgoingPaymentResponse,
 };
@@ -78,7 +79,7 @@ pub async fn handle_create_invoice(
         description: req.description.clone(),
         invoice: Some(invoice_str.clone()),
         amount_sat,
-        created_at: crate::time::seconds_since_epoch(),
+        created_at: crate::daemon::time::seconds_since_epoch(),
         expires_at,
     };
 
@@ -221,7 +222,7 @@ pub async fn handle_list_incoming_payments(
     metadata_store: Arc<InvoiceMetadataStore>,
     params: &ListPaymentsRequest,
 ) -> Result<Json<Vec<IncomingPaymentResponse>>, AppError> {
-    let now = crate::time::seconds_since_epoch();
+    let now = crate::daemon::time::seconds_since_epoch();
     let from = params.from.unwrap_or(0);
     let to = params.to.unwrap_or(now);
     let limit = params.limit.unwrap_or(20);
@@ -265,7 +266,7 @@ pub async fn handle_list_outgoing_payments(
     metadata_store: Arc<InvoiceMetadataStore>,
     params: &ListOutgoingPaymentsRequest,
 ) -> Result<Json<Vec<OutgoingPaymentResponse>>, AppError> {
-    let now = crate::time::seconds_since_epoch();
+    let now = crate::daemon::time::seconds_since_epoch();
     let from = params.from.unwrap_or(0);
     let to = params.to.unwrap_or(now);
     let limit = params.limit.unwrap_or(20) as usize;
@@ -410,7 +411,7 @@ fn enrich_metadata(
         None => (false, None, 0, None),
     };
 
-    let now = crate::time::seconds_since_epoch();
+    let now = crate::daemon::time::seconds_since_epoch();
     let is_expired = !is_paid && metadata.expires_at > 0 && metadata.expires_at <= now;
     let fees = if is_paid {
         requested_sat.unwrap_or(0).saturating_sub(received_sat)

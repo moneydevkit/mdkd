@@ -3,6 +3,14 @@ name = "mdkd"
 version = "0.0.1"
 edition = "2021"
 
+[lib]
+name = "mdk"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mdkd"
+path = "src/main.rs"
+
 [features]
 demo = []
 

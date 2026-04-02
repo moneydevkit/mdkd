@@ -7,7 +7,7 @@ use axum::Json;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 
-use crate::types::ApiError;
+use crate::daemon::types::ApiError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccessLevel {

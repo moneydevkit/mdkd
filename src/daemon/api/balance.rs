@@ -3,8 +3,8 @@ use std::sync::Arc;
 use axum::Json;
 use ldk_node::Node;
 
-use crate::api::error::AppError;
-use crate::types::GetBalanceResponse;
+use crate::daemon::api::error::AppError;
+use crate::daemon::types::GetBalanceResponse;
 
 /// Returns the node's Lightning and on-chain balances.
 ///
