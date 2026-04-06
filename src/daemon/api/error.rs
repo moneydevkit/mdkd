@@ -2,6 +2,8 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 
+use mdk::error::MdkError;
+
 use crate::daemon::types::ApiError;
 
 #[derive(Debug)]
@@ -9,6 +11,18 @@ pub enum AppError {
     BadRequest(String),
     NotFound(String),
     Internal(String),
+}
+
+impl From<MdkError> for AppError {
+    fn from(e: MdkError) -> Self {
+        match e {
+            MdkError::InvalidInput(msg) => AppError::BadRequest(msg),
+            MdkError::NotFound(msg) => AppError::NotFound(msg),
+            MdkError::Node(msg) => AppError::Internal(msg),
+            MdkError::Platform { message, .. } => AppError::Internal(message),
+            MdkError::Network(msg) => AppError::Internal(msg),
+        }
+    }
 }
 
 impl IntoResponse for AppError {

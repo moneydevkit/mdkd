@@ -1,23 +1,14 @@
 mod daemon;
 
-use std::collections::HashMap;
-use std::net::ToSocketAddrs;
 use std::path::PathBuf;
-use std::str::FromStr;
 use std::sync::Arc;
 
 use clap::Parser;
 use hex::FromHex;
-use ldk_node::bip39::Mnemonic;
-use ldk_node::bitcoin::hashes::sha256;
-use ldk_node::bitcoin::hashes::Hash;
-use ldk_node::bitcoin::secp256k1::PublicKey;
-use ldk_node::config::Config as LdkNodeConfig;
-use ldk_node::lightning::ln::msgs::SocketAddress;
-use ldk_node::Builder;
 use log::{error, info};
-use mdk::config::{ChainSource, NetworkInfra};
-use mdk::mdk_api::client::MdkApiClient;
+use mdk::client::MdkClient;
+use mdk::config::NetworkInfra;
+use mdk::node::NodeConfig;
 use reqwest::{Client, Proxy};
 use tokio::signal::unix::SignalKind;
 use tokio::sync::broadcast;
@@ -117,86 +108,6 @@ fn main() {
 
     daemon::logger::init(config_file.log_level);
 
-    // Optional SOCKS5 proxy for all outbound traffic.
-    let socks_proxy_url = args.socks_proxy;
-    let socks_proxy_addr = socks_proxy_url.as_ref().map(|raw| {
-        let host_port = raw
-            .strip_prefix("socks5://")
-            .or_else(|| raw.strip_prefix("socks5h://"))
-            .unwrap_or_else(|| {
-                eprintln!("SOCKS5 proxy url must start with socks5:// or socks5h://");
-                std::process::exit(1);
-            });
-        host_port
-            .to_socket_addrs()
-            .ok()
-            .and_then(|mut addrs| addrs.next())
-            .unwrap_or_else(|| {
-                eprintln!("cannot resolve SOCKS5 proxy {}", host_port);
-                std::process::exit(1);
-            })
-    });
-
-    if let Some(ref url) = socks_proxy_url {
-        info!("SOCKS5 proxy enabled: {}", url);
-    }
-
-    let ldk_node_config = LdkNodeConfig {
-        storage_dir_path: network_dir.to_str().unwrap().to_string(),
-        listening_addresses: config_file.listening_addrs,
-        announcement_addresses: config_file.announcement_addrs,
-        network: config_file.network,
-        ..Default::default()
-    };
-
-    let mut builder = Builder::from_config(ldk_node_config);
-    builder.set_log_facade_logger();
-
-    if let Some(addr) = socks_proxy_addr {
-        builder.set_socks5_proxy(addr);
-    }
-
-    if let Some(alias) = config_file.alias {
-        if let Err(e) = builder.set_node_alias(alias.to_string()) {
-            error!("Failed to set node alias: {e}");
-            std::process::exit(1);
-        }
-    }
-
-    match &infra.chain_source {
-        ChainSource::Esplora(server_url) => {
-            builder.set_chain_source_esplora(server_url.clone(), None);
-        }
-        ChainSource::Bitcoind {
-            rpc_host,
-            rpc_port,
-            rpc_user,
-            rpc_password,
-        } => {
-            builder.set_chain_source_bitcoind_rpc(
-                rpc_host.clone(),
-                *rpc_port,
-                rpc_user.clone(),
-                rpc_password.clone(),
-            );
-        }
-    }
-
-    if let Some(url) = config_file.pathfinding_scores_source_url {
-        builder.set_pathfinding_scores_source(url);
-    }
-
-    let lsp_pubkey = PublicKey::from_str(&infra.lsp_node_id).unwrap_or_else(|e| {
-        error!("Bad lsp_node_id: {e}");
-        std::process::exit(1);
-    });
-    let lsp_addr = SocketAddress::from_str(&infra.lsp_address).unwrap_or_else(|e| {
-        error!("Bad lsp_address: {e}");
-        std::process::exit(1);
-    });
-    builder.set_liquidity_source_lsps4(lsp_pubkey, lsp_addr);
-    info!("LSPS4 liquidity source: {}", infra.lsp_node_id);
-
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -208,45 +119,24 @@ fn main() {
         }
     };
 
-    builder.set_runtime(runtime.handle().clone());
+    let socks_proxy = args.socks_proxy;
 
-    let mnemonic = Mnemonic::parse(&mnemonic_phrase).unwrap_or_else(|e| {
-        error!("Invalid MDK_MNEMONIC: {e}");
-        std::process::exit(1);
-    });
-    builder.set_entropy_bip39_mnemonic(mnemonic.clone(), None);
-
-    let store_id = derive_vss_identifier(&mnemonic);
-    info!(
-        "VSS store: {} (store_id={}...)",
-        infra.vss_url,
-        &store_id[..16]
-    );
-
-    let node = match builder.build_with_vss_store_and_fixed_headers(
-        infra.vss_url.clone(),
-        store_id,
-        HashMap::new(),
-    ) {
-        Ok(node) => Arc::new(node),
-        Err(e) => {
-            error!("Failed to build LDK Node: {e}");
-            std::process::exit(1);
-        }
+    let node_config = NodeConfig {
+        network: config_file.network,
+        storage_dir_path: network_dir.to_str().unwrap().to_string(),
+        listening_addresses: config_file.listening_addrs,
+        announcement_addresses: config_file.announcement_addrs,
+        alias: config_file.alias.map(|a| a.to_string()),
+        socks_proxy: socks_proxy.clone(),
+        pathfinding_scores_source_url: config_file.pathfinding_scores_source_url,
+        mnemonic: mnemonic_phrase,
+        infra,
     };
 
-    let db_path = network_dir.join("mdkd.sqlite");
-    let metadata_store = match InvoiceMetadataStore::new(&db_path) {
-        Ok(store) => Arc::new(store),
-        Err(e) => {
-            error!("Failed to create InvoiceMetadataStore: {e}");
-            std::process::exit(1);
-        }
-    };
-
+    // Separate HTTP client for daemon concerns (webhooks, expiry monitor).
     let http_client = {
         let mut b = Client::builder();
-        if let Some(ref proxy_url) = socks_proxy_url {
+        if let Some(ref proxy_url) = socks_proxy {
             let proxy = Proxy::all(proxy_url).unwrap_or_else(|e| {
                 error!("Invalid SOCKS5 proxy for reqwest: {e}");
                 std::process::exit(1);
@@ -259,22 +149,29 @@ fn main() {
         })
     };
 
-    let base_url = infra.mdk_api_base_url;
-    info!("MDK platform integration enabled ({})", base_url);
-    let mdk_client = Arc::new(MdkApiClient::new(
-        http_client.clone(),
-        base_url,
-        mdk_access_token,
-    ));
-
-    info!("Starting up...");
-    match node.start() {
-        Ok(()) => {}
+    let db_path = network_dir.join("mdkd.sqlite");
+    let metadata_store = match InvoiceMetadataStore::new(&db_path) {
+        Ok(store) => Arc::new(store),
         Err(e) => {
-            error!("Failed to start LDK Node: {e}");
+            error!("Failed to create InvoiceMetadataStore: {e}");
             std::process::exit(1);
         }
-    }
+    };
+
+    let mdk_client = match MdkClient::new(
+        node_config,
+        mdk_access_token,
+        None,
+        Some(runtime.handle().clone()),
+    ) {
+        Ok(client) => Arc::new(client),
+        Err(e) => {
+            error!("Failed to build MdkClient: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    let node = mdk_client.node();
 
     let addrs = node
         .config()
@@ -300,17 +197,24 @@ fn main() {
             }
         };
 
-        let (event_tx, _) = broadcast::channel::<String>(128);
+        if let Err(e) = mdk_client.start() {
+            error!("Failed to start MdkClient: {e}");
+            std::process::exit(1);
+        }
+
+        info!("Starting up...");
+
+        let (ws_tx, _) = broadcast::channel::<String>(128);
 
         let app_state = AppState {
-            node: Arc::clone(&node),
+            node: mdk_client.node_arc(),
             metadata_store: Arc::clone(&metadata_store),
             http_auth: HttpAuth {
                 full_password: full_password.clone(),
                 read_only_password: read_only_password.clone(),
             },
             mdk_client: mdk_client.clone(),
-            event_tx: event_tx.clone(),
+            event_tx: ws_tx.clone(),
         };
 
         let app = daemon::api::router(app_state);
@@ -333,20 +237,18 @@ fn main() {
             daemon::expiry::run_expiry_monitor(expiry_metadata, expiry_secret, expiry_client).await;
         });
 
-        let event_node = Arc::clone(&node);
+        let event_mdk = Arc::clone(&mdk_client);
         let event_metadata = Arc::clone(&metadata_store);
         let event_secret = webhook_secret;
         let event_client = http_client.clone();
-        let event_mdk_client = mdk_client.clone();
 
         tokio::spawn(async move {
             daemon::event_loop::run_event_loop(
-                event_node,
+                event_mdk,
                 event_metadata,
                 event_secret,
                 event_client,
-                event_mdk_client,
-                event_tx,
+                ws_tx,
             )
             .await;
         });
@@ -367,11 +269,8 @@ fn main() {
         }
     });
 
-    node.stop().expect("Shutdown should always succeed.");
+    if let Err(e) = mdk_client.stop() {
+        error!("Error during shutdown: {e}");
+    }
     info!("Shutdown complete.");
-}
-
-fn derive_vss_identifier(mnemonic: &Mnemonic) -> String {
-    let mnemonic_phrase = mnemonic.to_string();
-    sha256::Hash::hash(mnemonic_phrase.as_bytes()).to_string()
 }

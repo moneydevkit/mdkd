@@ -22,7 +22,7 @@ use utoipa_scalar::{Scalar, Servable};
 
 pub use auth::HttpAuth;
 
-use mdk::mdk_api::client::MdkApiClient;
+use mdk::client::MdkClient;
 
 use crate::daemon::api::error::AppError;
 use crate::daemon::store::invoice_metadata::InvoiceMetadataStore;
@@ -38,7 +38,7 @@ pub struct AppState {
     pub node: Arc<Node>,
     pub metadata_store: Arc<InvoiceMetadataStore>,
     pub http_auth: HttpAuth,
-    pub mdk_client: Arc<MdkApiClient>,
+    pub mdk_client: Arc<MdkClient>,
     pub event_tx: broadcast::Sender<String>,
 }
 
@@ -232,7 +232,7 @@ async fn create_invoice(
     State(state): State<AppState>,
     Form(req): Form<CreateInvoiceRequest>,
 ) -> Result<Json<CreateInvoiceResponse>, AppError> {
-    invoices::handle_create_invoice(state.node, state.metadata_store, state.mdk_client, &req).await
+    invoices::handle_create_invoice(state.mdk_client, state.metadata_store, &req).await
 }
 
 #[utoipa::path(
