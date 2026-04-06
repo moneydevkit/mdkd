@@ -163,9 +163,9 @@ fn main() {
         }
     }
 
-    match infra.chain_source() {
+    match &infra.chain_source {
         ChainSource::Esplora(server_url) => {
-            builder.set_chain_source_esplora(server_url.to_string(), None);
+            builder.set_chain_source_esplora(server_url.clone(), None);
         }
         ChainSource::Bitcoind {
             rpc_host,
@@ -186,16 +186,16 @@ fn main() {
         builder.set_pathfinding_scores_source(url);
     }
 
-    let lsp_pubkey = PublicKey::from_str(infra.lsp_node_id()).unwrap_or_else(|e| {
+    let lsp_pubkey = PublicKey::from_str(&infra.lsp_node_id).unwrap_or_else(|e| {
         error!("Bad lsp_node_id: {e}");
         std::process::exit(1);
     });
-    let lsp_addr = SocketAddress::from_str(infra.lsp_address()).unwrap_or_else(|e| {
+    let lsp_addr = SocketAddress::from_str(&infra.lsp_address).unwrap_or_else(|e| {
         error!("Bad lsp_address: {e}");
         std::process::exit(1);
     });
     builder.set_liquidity_source_lsps4(lsp_pubkey, lsp_addr);
-    info!("LSPS4 liquidity source: {}", infra.lsp_node_id());
+    info!("LSPS4 liquidity source: {}", infra.lsp_node_id);
 
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -219,12 +219,12 @@ fn main() {
     let store_id = derive_vss_identifier(&mnemonic);
     info!(
         "VSS store: {} (store_id={}...)",
-        infra.vss_url(),
+        infra.vss_url,
         &store_id[..16]
     );
 
     let node = match builder.build_with_vss_store_and_fixed_headers(
-        infra.vss_url().to_string(),
+        infra.vss_url.clone(),
         store_id,
         HashMap::new(),
     ) {
@@ -259,7 +259,7 @@ fn main() {
         })
     };
 
-    let base_url = infra.mdk_api_base_url().to_string();
+    let base_url = infra.mdk_api_base_url;
     info!("MDK platform integration enabled ({})", base_url);
     let mdk_client = Arc::new(MdkApiClient::new(
         http_client.clone(),
