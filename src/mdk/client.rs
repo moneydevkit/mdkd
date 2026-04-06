@@ -7,6 +7,8 @@ use ldk_node::lightning::ln::channelmanager::PaymentId;
 use ldk_node::lightning_invoice::{Bolt11Invoice, Bolt11InvoiceDescription, Description, Sha256};
 use ldk_node::{Event, Node};
 use log::{error, info};
+use reqwest::{Client, Proxy};
+use tokio::runtime::Handle;
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
@@ -16,6 +18,7 @@ use crate::mdk::mdk_api::types::{
     CheckoutCustomer, CreateCheckoutRequest, PaymentEntry, PaymentReceivedRequest,
     RegisterInvoiceRequest,
 };
+use crate::mdk::node::{build_node, NodeConfig};
 use crate::mdk::types::{CheckoutResult, CreateCheckoutParams, InvoiceDescription, MdkEvent};
 
 const DEFAULT_EXPIRY_SECS: u32 = 3600;
@@ -32,42 +35,84 @@ pub struct MdkClient {
     event_tx: broadcast::Sender<MdkEvent>,
     event_handler: Option<EventHandler>,
     shutdown: CancellationToken,
+    handle: Handle,
+    /// Keeps the runtime alive when the library created it.
+    /// None when the caller provided a handle.
+    _runtime: Option<Arc<tokio::runtime::Runtime>>,
 }
 
 impl MdkClient {
+    /// Build the LDK node, HTTP client, and platform API client from config.
+    ///
+    /// `runtime` — pass `Some(handle)` to reuse an existing tokio runtime
+    /// (typical for Rust callers), or `None` to let the library create its own
+    /// (typical for language bindings).
+    ///
+    /// Does not start the node or event loop — call `start()` for that.
     pub fn new(
-        node: Arc<Node>,
-        api: Arc<MdkApiClient>,
+        config: NodeConfig,
+        access_token: String,
         event_handler: Option<EventHandler>,
-    ) -> Self {
+        runtime: Option<Handle>,
+    ) -> Result<Self, MdkError> {
+        let (handle, owned_runtime) = match runtime {
+            Some(h) => (h, None),
+            None => {
+                let rt = tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .build()
+                    .map_err(|e| MdkError::Node(format!("failed to create tokio runtime: {e}")))?;
+                let h = rt.handle().clone();
+                (h, Some(Arc::new(rt)))
+            }
+        };
+
+        let api_base_url = config.infra.mdk_api_base_url.clone();
+        let socks_proxy = config.socks_proxy.clone();
+
+        let node = build_node(config, handle.clone())?;
+        let http_client = build_http_client(socks_proxy.as_deref())?;
+        let api = Arc::new(MdkApiClient::new(
+            http_client.clone(),
+            api_base_url,
+            access_token,
+        ));
+
         let (event_tx, _) = broadcast::channel(256);
-        Self {
+        Ok(Self {
             node,
             api,
             event_tx,
             event_handler,
             shutdown: CancellationToken::new(),
-        }
+            handle,
+            _runtime: owned_runtime,
+        })
     }
 
-    /// Spawn the internal event loop. Call once after construction.
-    /// The loop translates LDK events into MdkEvents, notifies the
-    /// platform on payment receipt, invokes the event handler callback,
-    /// and broadcasts to all subscribers.
-    pub fn start(self: &Arc<Self>) {
+    /// Start the LDK node and spawn the internal event loop.
+    pub fn start(self: &Arc<Self>) -> Result<(), MdkError> {
+        self.node.start()?;
         let this = Arc::clone(self);
-        tokio::spawn(async move {
+        self.handle.spawn(async move {
             this.run_event_loop().await;
         });
+        Ok(())
     }
 
-    /// Cancel the event loop. Idempotent.
-    pub fn stop(&self) {
+    /// Cancel the event loop and stop the LDK node.
+    pub fn stop(&self) -> Result<(), MdkError> {
         self.shutdown.cancel();
+        self.node.stop()?;
+        Ok(())
     }
 
     pub fn node(&self) -> &Node {
         &self.node
+    }
+
+    pub fn node_arc(&self) -> Arc<Node> {
+        Arc::clone(&self.node)
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<MdkEvent> {
@@ -281,6 +326,18 @@ impl MdkClient {
             expires_at,
         })
     }
+}
+
+fn build_http_client(socks_proxy: Option<&str>) -> Result<Client, MdkError> {
+    let mut builder = Client::builder();
+    if let Some(proxy_url) = socks_proxy {
+        let proxy = Proxy::all(proxy_url)
+            .map_err(|e| MdkError::InvalidInput(format!("invalid SOCKS5 proxy for HTTP: {e}")))?;
+        builder = builder.proxy(proxy);
+    }
+    builder
+        .build()
+        .map_err(|e| MdkError::Network(format!("failed to build HTTP client: {e}")))
 }
 
 fn to_bolt11_description(desc: &InvoiceDescription) -> Result<Bolt11InvoiceDescription, MdkError> {

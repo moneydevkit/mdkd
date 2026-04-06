@@ -26,10 +26,12 @@ pub struct NodeConfig {
     pub pathfinding_scores_source_url: Option<String>,
     pub mnemonic: String,
     pub infra: NetworkInfra,
-    pub runtime: tokio::runtime::Handle,
 }
 
-pub fn build_node(config: NodeConfig) -> Result<Arc<Node>, MdkError> {
+pub fn build_node(
+    config: NodeConfig,
+    runtime: tokio::runtime::Handle,
+) -> Result<Arc<Node>, MdkError> {
     let ldk_config = LdkNodeConfig {
         storage_dir_path: config.storage_dir_path.clone(),
         listening_addresses: config.listening_addresses,
@@ -85,7 +87,7 @@ pub fn build_node(config: NodeConfig) -> Result<Arc<Node>, MdkError> {
     builder.set_liquidity_source_lsps4(lsp_pubkey, lsp_addr);
     info!("LSPS4 liquidity source: {}", infra.lsp_node_id);
 
-    builder.set_runtime(config.runtime);
+    builder.set_runtime(runtime);
 
     let mnemonic = Mnemonic::parse(&config.mnemonic)
         .map_err(|e| MdkError::InvalidInput(format!("invalid mnemonic: {e}")))?;
