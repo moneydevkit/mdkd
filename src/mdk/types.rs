@@ -1,113 +1,112 @@
-use std::fmt;
+use ldk_node::ChannelDetails;
 
-use serde::{Deserialize, Serialize};
-
-// --- Requests ---
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateCheckoutRequest {
-    pub node_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub amount: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+/// Parameters for creating a checkout (invoice + platform registration).
+pub struct CreateCheckoutParams {
+    pub amount_sat: Option<u64>,
+    pub description: InvoiceDescription,
+    pub expiry_seconds: Option<u32>,
+    pub product: Option<String>,
     pub currency: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub products: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub success_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub customer: Option<CheckoutCustomer>,
+    pub customer: Option<Customer>,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CheckoutCustomer {
-    #[serde(skip_serializing_if = "Option::is_none")]
+pub enum InvoiceDescription {
+    Direct(String),
+    Hash([u8; 32]),
+}
+
+pub struct Customer {
     pub name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub email: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub external_id: Option<String>,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RegisterInvoiceRequest {
-    pub node_id: String,
-    pub scid: String,
+pub struct CheckoutResult {
     pub checkout_id: String,
     pub invoice: String,
     pub payment_hash: String,
-    pub invoice_expires_at: String,
+    pub amount_sat: Option<u64>,
+    pub expires_at: Option<u64>,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PaymentReceivedRequest {
-    pub payments: Vec<PaymentEntry>,
+pub struct Balance {
+    pub lightning_sats: u64,
+    pub onchain_sats: u64,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PaymentEntry {
-    pub payment_hash: String,
-    pub amount_sats: u64,
-    pub sandbox: bool,
+pub struct Channel {
+    pub state: ChannelState,
+    pub channel_id: String,
+    pub balance_sats: u64,
+    pub inbound_liquidity_sats: u64,
+    pub capacity_sats: u64,
+    pub funding_tx_id: Option<String>,
 }
 
-// --- Responses ---
-
-#[derive(Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
-pub struct Checkout {
-    pub id: String,
-    pub status: String,
-    pub invoice_amount_sats: Option<u64>,
-    pub invoice_scid: Option<String>,
+pub enum ChannelState {
+    Online,
+    Offline,
+    Opening,
 }
 
-#[derive(Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
-pub struct PaymentReceivedResponse {
-    pub ok: bool,
-}
+impl From<&ChannelDetails> for Channel {
+    fn from(ch: &ChannelDetails) -> Self {
+        let state = match (ch.is_channel_ready, ch.is_usable) {
+            (true, true) => ChannelState::Online,
+            (true, false) => ChannelState::Offline,
+            (false, _) => ChannelState::Opening,
+        };
 
-// --- Errors ---
-
-#[derive(Debug)]
-pub enum MdkApiError {
-    Network(reqwest::Error),
-    Api {
-        code: String,
-        message: String,
-        status: u16,
-    },
-    Deserialize(String),
-}
-
-impl fmt::Display for MdkApiError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            MdkApiError::Network(e) => write!(f, "network error: {e}"),
-            MdkApiError::Api {
-                code,
-                message,
-                status,
-            } => {
-                write!(f, "API error {status} [{code}]: {message}")
-            }
-            MdkApiError::Deserialize(msg) => write!(f, "deserialize error: {msg}"),
+        Self {
+            state,
+            channel_id: ch.channel_id.to_string(),
+            balance_sats: ch.outbound_capacity_msat / 1000,
+            inbound_liquidity_sats: ch.inbound_capacity_msat / 1000,
+            capacity_sats: ch.channel_value_sats,
+            funding_tx_id: ch.funding_txo.map(|txo| txo.txid.to_string()),
         }
     }
 }
 
-impl From<reqwest::Error> for MdkApiError {
-    fn from(e: reqwest::Error) -> Self {
-        MdkApiError::Network(e)
-    }
+pub struct NodeInfo {
+    pub node_id: String,
+    pub network: String,
+    pub block_height: u32,
+    pub channels: Vec<Channel>,
+}
+
+#[derive(Debug, Clone)]
+pub enum MdkEvent {
+    PaymentReceived {
+        payment_hash: String,
+        amount_sats: u64,
+    },
+    PaymentSuccessful {
+        payment_id: String,
+        payment_hash: Option<String>,
+        fee_paid_sats: Option<u64>,
+    },
+    PaymentFailed {
+        payment_id: String,
+        reason: Option<String>,
+    },
+    ChannelPending {
+        channel_id: String,
+        counterparty_node_id: String,
+    },
+    ChannelReady {
+        channel_id: String,
+        counterparty_node_id: String,
+    },
+    PaymentForwarded {
+        fee_earned_sats: Option<u64>,
+    },
+}
+
+pub struct PaymentResult {
+    pub payment_id: String,
+    pub payment_hash: Option<String>,
+    pub fee_paid_sats: Option<u64>,
 }

@@ -6,8 +6,8 @@ use hex::FromHex;
 use ldk_node::lightning::ln::types::ChannelId;
 use ldk_node::Node;
 
-use crate::api::error::AppError;
-use crate::types::{ChannelInfo, CloseChannelRequest};
+use crate::daemon::api::error::AppError;
+use crate::daemon::types::{ChannelInfo, CloseChannelRequest};
 
 pub async fn handle_list_channels(node: Arc<Node>) -> Result<Json<Vec<ChannelInfo>>, AppError> {
     let channels = node.list_channels().iter().map(ChannelInfo::from).collect();

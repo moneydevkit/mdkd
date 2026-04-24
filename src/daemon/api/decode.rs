@@ -4,8 +4,8 @@ use axum::Json;
 use ldk_node::lightning::offers::offer::{Amount, Offer};
 use ldk_node::lightning_invoice::Bolt11Invoice;
 
-use crate::api::error::AppError;
-use crate::types::{
+use crate::daemon::api::error::AppError;
+use crate::daemon::types::{
     DecodeInvoiceRequest, DecodeInvoiceResponse, DecodeOfferRequest, DecodeOfferResponse,
     RoutingHint, RoutingHintHop,
 };
@@ -100,7 +100,7 @@ mod tests {
     use ldk_node::bitcoin::secp256k1::{PublicKey, Secp256k1, SecretKey};
     use ldk_node::lightning::offers::offer::OfferBuilder;
 
-    use crate::types::{DecodeInvoiceRequest, DecodeOfferRequest};
+    use crate::daemon::types::{DecodeInvoiceRequest, DecodeOfferRequest};
 
     // Signet invoice with LSPS4 JIT route hint (single hop), "1 cup coffee".
     // {

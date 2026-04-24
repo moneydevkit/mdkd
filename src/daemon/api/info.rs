@@ -4,8 +4,8 @@ use axum::Json;
 use ldk_node::bitcoin::Network;
 use ldk_node::Node;
 
-use crate::api::error::AppError;
-use crate::types::{ChannelInfo, GetInfoResponse};
+use crate::daemon::api::error::AppError;
+use crate::daemon::types::{ChannelInfo, GetInfoResponse};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 

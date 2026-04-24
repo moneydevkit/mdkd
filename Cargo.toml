@@ -3,6 +3,14 @@ name = "mdkd"
 version = "0.0.1"
 edition = "2021"
 
+[lib]
+name = "mdk"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mdkd"
+path = "src/main.rs"
+
 [features]
 demo = []
 
@@ -15,6 +23,7 @@ utoipa = { version = "5.4", features = ["axum_extras"] }
 utoipa-axum = "0.2"
 utoipa-scalar = { version = "0.3", features = ["axum"] }
 tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", features = ["json", "rustls-tls", "socks"], default-features = false }

@@ -22,10 +22,11 @@ use utoipa_scalar::{Scalar, Servable};
 
 pub use auth::HttpAuth;
 
-use crate::api::error::AppError;
-use crate::mdk::client::MdkApiClient;
-use crate::store::invoice_metadata::InvoiceMetadataStore;
-use crate::types::{
+use mdk::client::MdkClient;
+
+use crate::daemon::api::error::AppError;
+use crate::daemon::store::invoice_metadata::InvoiceMetadataStore;
+use crate::daemon::types::{
     ApiError, ChannelInfo, CloseChannelRequest, CreateInvoiceRequest, CreateInvoiceResponse,
     DecodeInvoiceRequest, DecodeInvoiceResponse, DecodeOfferRequest, DecodeOfferResponse,
     GetBalanceResponse, GetInfoResponse, IncomingPaymentResponse, ListOutgoingPaymentsRequest,
@@ -37,7 +38,7 @@ pub struct AppState {
     pub node: Arc<Node>,
     pub metadata_store: Arc<InvoiceMetadataStore>,
     pub http_auth: HttpAuth,
-    pub mdk_client: Arc<MdkApiClient>,
+    pub mdk_client: Arc<MdkClient>,
     pub event_tx: broadcast::Sender<String>,
 }
 
@@ -107,7 +108,7 @@ pub fn router(state: AppState) -> Router {
 
     #[cfg(feature = "demo")]
     let router = {
-        const DEMO_HTML: &str = include_str!("../../wallet.html");
+        const DEMO_HTML: &str = include_str!("../../../wallet.html");
         router.route(
             "/",
             axum::routing::get(|| async { axum::response::Html(DEMO_HTML) }),
@@ -231,7 +232,7 @@ async fn create_invoice(
     State(state): State<AppState>,
     Form(req): Form<CreateInvoiceRequest>,
 ) -> Result<Json<CreateInvoiceResponse>, AppError> {
-    invoices::handle_create_invoice(state.node, state.metadata_store, state.mdk_client, &req).await
+    invoices::handle_create_invoice(state.mdk_client, state.metadata_store, &req).await
 }
 
 #[utoipa::path(
