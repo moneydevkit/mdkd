@@ -6,6 +6,7 @@ pub mod error;
 pub mod info;
 pub mod invoices;
 pub mod onchain;
+pub mod pay;
 pub mod websocket;
 
 use std::sync::Arc;
@@ -30,7 +31,8 @@ use crate::daemon::types::{
     ApiError, ChannelInfo, CloseChannelRequest, CreateInvoiceRequest, CreateInvoiceResponse,
     DecodeInvoiceRequest, DecodeInvoiceResponse, DecodeOfferRequest, DecodeOfferResponse,
     GetBalanceResponse, GetInfoResponse, IncomingPaymentResponse, ListOutgoingPaymentsRequest,
-    ListPaymentsRequest, OutgoingPaymentResponse, SendToAddressRequest,
+    ListPaymentsRequest, OutgoingPaymentResponse, PayInvoiceRequest, PayInvoiceResponse,
+    SendToAddressRequest,
 };
 
 #[derive(Clone)]
@@ -50,6 +52,7 @@ pub struct AppState {
         (name = "channels", description = "Channel management"),
         (name = "payments", description = "Incoming payments"),
         (name = "invoices", description = "Invoice creation"),
+        (name = "send", description = "Outbound Lightning payments"),
         (name = "decode", description = "Decode Lightning artifacts"),
         (name = "onchain", description = "On-chain operations"),
     )
@@ -85,6 +88,7 @@ pub fn router(state: AppState) -> Router {
         .routes(routes!(create_invoice))
         .routes(routes!(close_channel))
         .routes(routes!(send_to_address))
+        .routes(routes!(pay_invoice))
         .layer(middleware::from_fn(auth::require_full_access));
 
     let (router, api) = OpenApiRouter::with_openapi(ApiDoc::openapi())
@@ -298,4 +302,21 @@ async fn get_outgoing_payment(
     path: Path<String>,
 ) -> Result<Json<OutgoingPaymentResponse>, AppError> {
     invoices::handle_get_outgoing_payment(state.node, path).await
+}
+
+#[utoipa::path(
+    post, path = "/payinvoice", tag = "send",
+    request_body(content = PayInvoiceRequest, content_type = "application/x-www-form-urlencoded"),
+    responses(
+        (status = 200, body = PayInvoiceResponse),
+        (status = 400, body = ApiError),
+        (status = 500, body = ApiError),
+    ),
+    security(("basic_auth" = []))
+)]
+async fn pay_invoice(
+    State(state): State<AppState>,
+    Form(req): Form<PayInvoiceRequest>,
+) -> Result<Json<PayInvoiceResponse>, AppError> {
+    Ok(Json(pay::handle_pay_invoice(state.node, &req).await?))
 }

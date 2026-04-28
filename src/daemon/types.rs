@@ -246,6 +246,20 @@ pub struct CloseChannelRequest {
     pub channel_id: String,
 }
 
+#[derive(Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PayInvoiceRequest {
+    pub invoice: String,
+    pub amount_sat: Option<u64>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PayInvoiceResponse {
+    pub payment_id: String,
+    pub payment_hash: String,
+}
+
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiError {
