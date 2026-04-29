@@ -1213,6 +1213,174 @@ async fn test_decodeoffer() {
     assert!(decoded["amountMsat"].is_null());
 }
 
+/// End-to-end auto-splice flow: pay → JIT channel #1 → close → on-chain funds
+/// → pay again → JIT channel #2 → splice manager ticks → on-chain drained
+/// into channel #2.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_auto_splice_after_channel_close_and_reopen() {
+    let bitcoind = TestBitcoind::new();
+    let lsp = LspNode::new(&bitcoind);
+    fund_lsp(&bitcoind, &lsp).await;
+
+    let server = MdkdHandle::start(&bitcoind, None, Some(&lsp), &random_mnemonic()).await;
+    let payer = PayerNode::new(&bitcoind);
+    setup_payer_lsp_channel(&bitcoind, &payer, &lsp, 500_000).await;
+
+    // First payment opens JIT channel #1.
+    let invoice: serde_json::Value = server
+        .post_form(
+            "/createinvoice",
+            &[
+                ("amountSat", "100000"),
+                ("description", "splice setup"),
+                ("expirySeconds", "3600"),
+            ],
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let invoice_str = invoice["serialized"].as_str().unwrap();
+    let payment_hash = invoice["paymentHash"].as_str().unwrap().to_string();
+    payer.pay_invoice(invoice_str);
+
+    let start = std::time::Instant::now();
+    loop {
+        let resp: serde_json::Value = server
+            .get(&format!("/payments/incoming/{payment_hash}"))
+            .await
+            .json()
+            .await
+            .unwrap();
+        if resp["isPaid"].as_bool().unwrap() {
+            break;
+        }
+        if start.elapsed() > Duration::from_secs(60) {
+            panic!("Timed out waiting for first payment to settle");
+        }
+        bitcoind.mine_blocks(1);
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+
+    // Close channel #1 cooperatively.
+    let channels: Vec<serde_json::Value> = server.get("/listchannels").await.json().await.unwrap();
+    assert_eq!(channels.len(), 1);
+    let channel_id = channels[0]["channelId"].as_str().unwrap().to_string();
+    let resp = server
+        .post_form("/closechannel", &[("channelId", &channel_id)])
+        .await;
+    assert_eq!(resp.status(), 200);
+
+    let start = std::time::Instant::now();
+    loop {
+        bitcoind.mine_blocks(1);
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        let channels: Vec<serde_json::Value> =
+            server.get("/listchannels").await.json().await.unwrap();
+        if channels.is_empty() {
+            break;
+        }
+        if start.elapsed() > Duration::from_secs(60) {
+            panic!("Timed out waiting for channel #1 to close");
+        }
+    }
+
+    // Wait for the close output to become spendable on the server side.
+    bitcoind.mine_blocks(6);
+    let start = std::time::Instant::now();
+    let onchain_after_close = loop {
+        let balance: serde_json::Value = server.get("/getbalance").await.json().await.unwrap();
+        let onchain = balance["onchainBalanceSat"].as_u64().unwrap();
+        if onchain > 0 {
+            break onchain;
+        }
+        if start.elapsed() > Duration::from_secs(30) {
+            panic!("Timed out waiting for spendable on-chain balance: {balance}");
+        }
+        bitcoind.mine_blocks(1);
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    };
+    assert!(
+        onchain_after_close > 50_000,
+        "Expected meaningful on-chain balance after close, got {onchain_after_close}"
+    );
+
+    // Second payment opens JIT channel #2 — the splice target.
+    let invoice: serde_json::Value = server
+        .post_form(
+            "/createinvoice",
+            &[
+                ("amountSat", "100000"),
+                ("description", "splice trigger"),
+                ("expirySeconds", "3600"),
+            ],
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let invoice_str = invoice["serialized"].as_str().unwrap();
+    let payment_hash = invoice["paymentHash"].as_str().unwrap().to_string();
+    payer.pay_invoice(invoice_str);
+
+    let start = std::time::Instant::now();
+    loop {
+        let resp: serde_json::Value = server
+            .get(&format!("/payments/incoming/{payment_hash}"))
+            .await
+            .json()
+            .await
+            .unwrap();
+        if resp["isPaid"].as_bool().unwrap() {
+            break;
+        }
+        if start.elapsed() > Duration::from_secs(60) {
+            panic!("Timed out waiting for second JIT payment to settle");
+        }
+        bitcoind.mine_blocks(1);
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+
+    // Splice manager polls every 1s (test config). Rather than racing a
+    // pre-splice capacity snapshot, assert conservation across two
+    // observations: on-chain drops AND channel capacity grew by at least
+    // that delta. Together they pin the funds to the channel without
+    // depending on snapshot timing. Mine blocks while waiting so the
+    // splice tx confirms and the LSP returns splice_locked (client-
+    // initiated splices are not 0-conf).
+    let splice_threshold = onchain_after_close / 10;
+    let start = std::time::Instant::now();
+    let onchain_after_splice = loop {
+        bitcoind.mine_blocks(1);
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let balance: serde_json::Value = server.get("/getbalance").await.json().await.unwrap();
+        let onchain = balance["onchainBalanceSat"].as_u64().unwrap();
+        if onchain < splice_threshold {
+            break onchain;
+        }
+        if start.elapsed() > Duration::from_secs(120) {
+            let channels: serde_json::Value =
+                server.get("/listchannels").await.json().await.unwrap();
+            panic!(
+                "Auto-splice did not consume on-chain balance. \
+                 onchain_after_close={onchain_after_close}, balance={balance}, \
+                 channels={channels}"
+            );
+        }
+    };
+
+    // Sanity: the channel absorbed at least the consumed on-chain funds.
+    let channels: Vec<serde_json::Value> = server.get("/listchannels").await.json().await.unwrap();
+    assert_eq!(channels.len(), 1);
+    let post_splice_capacity = channels[0]["capacitySat"].as_u64().unwrap();
+    let consumed_onchain = onchain_after_close - onchain_after_splice;
+    assert!(
+        post_splice_capacity > consumed_onchain,
+        "Expected channel capacity to absorb the spliced funds. \
+         capacity={post_splice_capacity}, consumed_onchain={consumed_onchain}"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn test_decodeoffer_invalid() {
     let bitcoind = TestBitcoind::new();
