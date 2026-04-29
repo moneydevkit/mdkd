@@ -37,6 +37,10 @@ pub fn build_node(
         listening_addresses: config.listening_addresses,
         announcement_addresses: config.announcement_addresses,
         network: config.network,
+        // Don't advertise anchor channel support: anchors require a
+        // 25_000 sat on-chain reserve per channel for force-close fee
+        // bumping, which mdkd clients (one channel to the LSP) should not have in general.
+        anchor_channels_config: None,
         ..Default::default()
     };
 
