@@ -6,7 +6,7 @@ use ldk_node::bitcoin::hashes::Hash as _;
 use ldk_node::lightning::ln::channelmanager::PaymentId;
 use ldk_node::lightning_invoice::{Bolt11Invoice, Bolt11InvoiceDescription, Description, Sha256};
 use ldk_node::{Event, Node};
-use log::{error, info};
+use log::{error, info, warn};
 use reqwest::{Client, Proxy};
 use tokio::runtime::Handle;
 use tokio::sync::broadcast;
@@ -223,6 +223,35 @@ impl MdkClient {
                 );
                 Some(MdkEvent::PaymentForwarded {
                     fee_earned_sats: total_fee_earned_msat.map(|m| m / 1000),
+                })
+            }
+            Event::SplicePending {
+                channel_id,
+                new_funding_txo,
+                ..
+            } => {
+                let cid = channel_id.to_string();
+                let txid = new_funding_txo.txid.to_string();
+                info!("SPLICE_PENDING: channel {cid}, new funding tx {txid}");
+                Some(MdkEvent::SplicePending {
+                    channel_id: cid,
+                    new_funding_txid: txid,
+                })
+            }
+            Event::SpliceFailed {
+                channel_id,
+                abandoned_funding_txo,
+                ..
+            } => {
+                let cid = channel_id.to_string();
+                let reason = match abandoned_funding_txo {
+                    Some(txo) => format!("abandoned splice tx {}", txo.txid),
+                    None => "splice abandoned before tx broadcast".to_string(),
+                };
+                warn!("SPLICE_FAILED: channel {cid}, {reason}");
+                Some(MdkEvent::SpliceFailed {
+                    channel_id: cid,
+                    reason,
                 })
             }
             _ => None,
