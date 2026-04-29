@@ -13,6 +13,36 @@ pub enum MdkError {
     },
     Network(String),
     NotFound(String),
+    Splice(SpliceError),
+}
+
+/// Typed splice failure modes. Modeled as an ADT so the splice
+/// manager can decide what to do (skip vs. emit failure event)
+/// without inspecting log strings.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SpliceError {
+    /// The target channel exists but is not currently usable
+    /// (mid-splice, peer disconnected, mid-monitor-update). The
+    /// splice manager should skip this tick and try again.
+    ChannelNotUsable,
+    /// The on-chain wallet does not have enough confirmed funds
+    /// for the requested splice amount. Retried next tick.
+    InsufficientFunds,
+    /// ldk-node refused the splice (coin selection failed under
+    /// fee pressure, channel not yet ready, peer rejected, etc.).
+    /// ldk-node currently collapses these into one error variant;
+    /// we do too.
+    Rejected,
+}
+
+impl fmt::Display for SpliceError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SpliceError::ChannelNotUsable => write!(f, "channel not usable"),
+            SpliceError::InsufficientFunds => write!(f, "insufficient confirmed on-chain funds"),
+            SpliceError::Rejected => write!(f, "splice rejected by ldk-node"),
+        }
+    }
 }
 
 impl fmt::Display for MdkError {
@@ -27,6 +57,7 @@ impl fmt::Display for MdkError {
             } => write!(f, "platform API error ({status}): [{code}] {message}"),
             MdkError::Network(msg) => write!(f, "network error: {msg}"),
             MdkError::NotFound(msg) => write!(f, "not found: {msg}"),
+            MdkError::Splice(e) => write!(f, "splice error: {e}"),
         }
     }
 }

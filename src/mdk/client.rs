@@ -1,18 +1,20 @@
+use std::str::FromStr;
 use std::sync::Arc;
 
 use chrono::{DateTime, SecondsFormat};
 use ldk_node::bitcoin::hashes::sha256;
 use ldk_node::bitcoin::hashes::Hash as _;
+use ldk_node::bitcoin::secp256k1::PublicKey;
 use ldk_node::lightning::ln::channelmanager::PaymentId;
 use ldk_node::lightning_invoice::{Bolt11Invoice, Bolt11InvoiceDescription, Description, Sha256};
-use ldk_node::{Event, Node};
+use ldk_node::{Event, Node, NodeError, UserChannelId};
 use log::{error, info, warn};
 use reqwest::{Client, Proxy};
 use tokio::runtime::Handle;
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
-use crate::mdk::error::MdkError;
+use crate::mdk::error::{MdkError, SpliceError};
 use crate::mdk::mdk_api::client::MdkApiClient;
 use crate::mdk::mdk_api::types::{
     CheckoutCustomer, CreateCheckoutRequest, PaymentEntry, PaymentReceivedRequest,
@@ -32,6 +34,7 @@ pub type EventHandler = Arc<dyn Fn(MdkEvent) + Send + Sync>;
 pub struct MdkClient {
     node: Arc<Node>,
     api: Arc<MdkApiClient>,
+    lsp_pubkey: PublicKey,
     event_tx: broadcast::Sender<MdkEvent>,
     event_handler: Option<EventHandler>,
     shutdown: CancellationToken,
@@ -69,6 +72,8 @@ impl MdkClient {
 
         let api_base_url = config.infra.mdk_api_base_url.clone();
         let socks_proxy = config.socks_proxy.clone();
+        let lsp_pubkey = PublicKey::from_str(&config.infra.lsp_node_id)
+            .map_err(|e| MdkError::InvalidInput(format!("bad lsp_node_id: {e}")))?;
 
         let node = build_node(config, handle.clone())?;
         let http_client = build_http_client(socks_proxy.as_deref())?;
@@ -82,6 +87,7 @@ impl MdkClient {
         Ok(Self {
             node,
             api,
+            lsp_pubkey,
             event_tx,
             event_handler,
             shutdown: CancellationToken::new(),
@@ -113,6 +119,50 @@ impl MdkClient {
 
     pub fn node_arc(&self) -> Arc<Node> {
         Arc::clone(&self.node)
+    }
+
+    pub fn lsp_pubkey(&self) -> PublicKey {
+        self.lsp_pubkey
+    }
+
+    /// Splice `amount_sats` of confirmed on-chain funds into the
+    /// existing channel identified by `user_channel_id`, with the
+    /// LSP as counterparty.
+    ///
+    /// Validates locally that the channel exists and is usable
+    /// before delegating to ldk-node. ldk-node's splice errors are
+    /// mapped to typed `SpliceError` variants so callers (notably
+    /// the splice manager) can pattern-match on the failure mode
+    /// without inspecting strings.
+    pub fn splice_in(
+        &self,
+        user_channel_id: UserChannelId,
+        amount_sats: u64,
+    ) -> Result<(), MdkError> {
+        if amount_sats == 0 {
+            return Err(MdkError::InvalidInput(
+                "splice amount must be greater than zero".into(),
+            ));
+        }
+
+        let channels = self.node.list_channels();
+        let channel = channels
+            .iter()
+            .find(|c| c.user_channel_id == user_channel_id)
+            .ok_or_else(|| {
+                MdkError::NotFound(format!(
+                    "channel with user_channel_id {}",
+                    user_channel_id.0
+                ))
+            })?;
+
+        if !channel.is_usable {
+            return Err(MdkError::Splice(SpliceError::ChannelNotUsable));
+        }
+
+        self.node
+            .splice_in(&user_channel_id, self.lsp_pubkey, amount_sats)
+            .map_err(map_splice_error)
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<MdkEvent> {
@@ -401,5 +451,19 @@ fn format_payment_id(id: &Option<PaymentId>) -> String {
     match id {
         Some(pid) => pid.0.iter().map(|b| format!("{b:02x}")).collect(),
         None => "unknown".into(),
+    }
+}
+
+/// Map an ldk-node error returned from a splice call into a typed
+/// `MdkError::Splice`. Kept as a free helper (rather than a
+/// `From<NodeError>` impl) because `NodeError::InsufficientFunds`
+/// is also produced by `open_channel` and on-chain wallet paths,
+/// where mapping it to a splice variant would be wrong. Anything
+/// other than `InsufficientFunds` collapses to `Rejected` — the
+/// splice manager treats the catch-all bucket uniformly.
+fn map_splice_error(e: NodeError) -> MdkError {
+    match e {
+        NodeError::InsufficientFunds => MdkError::Splice(SpliceError::InsufficientFunds),
+        _ => MdkError::Splice(SpliceError::Rejected),
     }
 }
