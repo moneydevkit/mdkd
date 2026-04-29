@@ -20,7 +20,8 @@ use crate::mdk::mdk_api::types::{
     CheckoutCustomer, CreateCheckoutRequest, PaymentEntry, PaymentReceivedRequest,
     RegisterInvoiceRequest,
 };
-use crate::mdk::node::{build_node, NodeConfig};
+use crate::mdk::node::{build_node, NodeConfig, SpliceConfig};
+use crate::mdk::splice_manager;
 use crate::mdk::types::{CheckoutResult, CreateCheckoutParams, InvoiceDescription, MdkEvent};
 
 const DEFAULT_EXPIRY_SECS: u32 = 3600;
@@ -35,6 +36,7 @@ pub struct MdkClient {
     node: Arc<Node>,
     api: Arc<MdkApiClient>,
     lsp_pubkey: PublicKey,
+    splice_cfg: SpliceConfig,
     event_tx: broadcast::Sender<MdkEvent>,
     event_handler: Option<EventHandler>,
     shutdown: CancellationToken,
@@ -74,6 +76,7 @@ impl MdkClient {
         let socks_proxy = config.socks_proxy.clone();
         let lsp_pubkey = PublicKey::from_str(&config.infra.lsp_node_id)
             .map_err(|e| MdkError::InvalidInput(format!("bad lsp_node_id: {e}")))?;
+        let splice_cfg = config.splice.clone();
 
         let node = build_node(config, handle.clone())?;
         let http_client = build_http_client(socks_proxy.as_deref())?;
@@ -88,6 +91,7 @@ impl MdkClient {
             node,
             api,
             lsp_pubkey,
+            splice_cfg,
             event_tx,
             event_handler,
             shutdown: CancellationToken::new(),
@@ -103,6 +107,14 @@ impl MdkClient {
         self.handle.spawn(async move {
             this.run_event_loop().await;
         });
+        if self.splice_cfg.enabled {
+            splice_manager::spawn(
+                Arc::clone(self),
+                self.splice_cfg.clone(),
+                self.shutdown.clone(),
+                &self.handle,
+            );
+        }
         Ok(())
     }
 
@@ -169,6 +181,16 @@ impl MdkClient {
         self.event_tx.subscribe()
     }
 
+    /// Fan an event out to the configured handler and broadcast
+    /// subscribers. Used by the LDK event loop and the splice manager
+    /// to surface internally-generated events.
+    pub fn emit_event(&self, ev: MdkEvent) {
+        if let Some(handler) = &self.event_handler {
+            handler(ev.clone());
+        }
+        let _ = self.event_tx.send(ev);
+    }
+
     async fn run_event_loop(&self) {
         loop {
             tokio::select! {
@@ -181,10 +203,7 @@ impl MdkClient {
                     }
 
                     if let Some(ev) = mdk_event {
-                        if let Some(handler) = &self.event_handler {
-                            handler(ev.clone());
-                        }
-                        let _ = self.event_tx.send(ev);
+                        self.emit_event(ev);
                     }
                 }
             }
