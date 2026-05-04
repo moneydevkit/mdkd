@@ -315,6 +315,27 @@ impl PayerNode {
         self.node.bolt11_payment().send(&invoice, None).unwrap();
     }
 
+    /// Issue a fresh bolt11 invoice that other nodes can pay this PayerNode for.
+    pub fn create_invoice(&self, amount_sat: u64, description: &str, expiry_secs: u32) -> String {
+        let description =
+            ldk_node::lightning_invoice::Description::new(description.to_string()).unwrap();
+        let description =
+            ldk_node::lightning_invoice::Bolt11InvoiceDescription::Direct(description);
+        self.node
+            .bolt11_payment()
+            .receive(amount_sat * 1000, &description, expiry_secs)
+            .unwrap()
+            .to_string()
+    }
+
+    pub fn outbound_capacity_msat(&self) -> u64 {
+        self.node
+            .list_channels()
+            .iter()
+            .map(|c| c.outbound_capacity_msat)
+            .sum()
+    }
+
     pub fn open_channel(&self, node_id: &str, addr: &str, amount_sats: u64) {
         let pubkey = PublicKey::from_str(node_id).unwrap();
         let socket_addr = SocketAddress::from_str(addr).unwrap();
