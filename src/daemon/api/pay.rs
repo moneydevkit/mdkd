@@ -23,10 +23,16 @@ pub async fn handle_pay_invoice(
         (None, Some(amount_sat)) => bolt11
             .send_using_amount(&invoice, amount_sat * 1000, None)
             .map_err(|e| AppError::Internal(format!("pay failed: {e}")))?,
-        (Some(_), Some(_)) => {
-            return Err(AppError::BadRequest(
-                "amountSat must not be set when the invoice already specifies an amount".into(),
-            ))
+        (Some(invoice_msat), Some(amount_sat)) => {
+            if invoice_msat != amount_sat * 1000 {
+                return Err(AppError::BadRequest(format!(
+                    "amountSat ({amount_sat}) does not match invoice amount ({} sat)",
+                    invoice_msat / 1000
+                )));
+            }
+            bolt11
+                .send(&invoice, None)
+                .map_err(|e| AppError::Internal(format!("pay failed: {e}")))?
         }
         (None, None) => {
             return Err(AppError::BadRequest(

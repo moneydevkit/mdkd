@@ -1364,14 +1364,15 @@ async fn test_payinvoice_outbound_payment() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_payinvoice_amount_conflict_400() {
+async fn test_payinvoice_amount_mismatch_400() {
     let bitcoind = TestBitcoind::new();
     let server = MdkdHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
 
     // A throwaway PayerNode just to mint a real bolt11 with an amount.
     let payer = PayerNode::new(&bitcoind);
-    let invoice = payer.create_invoice(10_000, "conflict test", 600);
+    let invoice = payer.create_invoice(10_000, "mismatch test", 600);
 
+    // amountSat that disagrees with the invoice amount must be rejected up front.
     let resp = server
         .post_form(
             "/payinvoice",
@@ -1381,9 +1382,24 @@ async fn test_payinvoice_amount_conflict_400() {
     assert_eq!(resp.status(), 400);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["code"].as_str().unwrap(), "bad_request");
-    assert!(body["error"]
-        .as_str()
-        .unwrap()
-        .to_lowercase()
-        .contains("amountsat"));
+    let err = body["error"].as_str().unwrap().to_lowercase();
+    assert!(err.contains("does not match"), "unexpected error: {err}");
+    assert!(err.contains("amountsat"), "unexpected error: {err}");
+
+    // Matching amountSat must pass validation. Payment itself will fail with an
+    // internal error (no channels in this minimal setup), but crucially it must
+    // not be rejected with a 400 from the validation path.
+    let resp = server
+        .post_form(
+            "/payinvoice",
+            &[("invoice", &invoice), ("amountSat", "10000")],
+        )
+        .await;
+    assert_ne!(
+        resp.status(),
+        400,
+        "matching amountSat should pass validation, got status {} body {}",
+        resp.status(),
+        resp.text().await.unwrap_or_default()
+    );
 }
