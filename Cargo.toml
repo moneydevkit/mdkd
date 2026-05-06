@@ -18,6 +18,10 @@ demo = []
 # Branch: https://github.com/moneydevkit/ldk-node/tree/lsp-0.7.0_socks-support
 ldk-node = { git = "https://github.com/moneydevkit/ldk-node", rev = "c3aba2a47a6314968979de8fe772d9d1bcb3ee6e" }
 
+# Pinned to the same git rev as ldk-node's transitive pull to avoid duplicate
+# crate compilation. Verify with `cargo tree -d | grep bitcoin-payment-instructions`.
+bitcoin-payment-instructions = { git = "https://github.com/moneydevkit/bitcoin-payment-instructions", rev = "6796e87525d6c564e1332354a808730e2ba2ebf8", default-features = false, features = ["http"] }
+
 axum = { version = "0.8", features = ["json", "ws"] }
 utoipa = { version = "5.4", features = ["axum_extras"] }
 utoipa-axum = "0.2"
@@ -45,3 +49,5 @@ ldk-node-lsp = { package = "ldk-node", git = "https://github.com/moneydevkit/ldk
 tempfile = "3"
 tokio-tungstenite = "0.26"
 tower = "0.5.3"
+wiremock = "0.6"
+bech32 = "0.11"

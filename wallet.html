@@ -259,6 +259,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
       <div class="tab" data-tab="invoice">Create Invoice</div>
       <div class="tab" data-tab="payments">Payments</div>
       <div class="tab" data-tab="decode">Decode</div>
+      <div class="tab" data-tab="pay">Send Lightning</div>
       <div class="tab" data-tab="send">Send On-chain</div>
     </div>
 
@@ -403,6 +404,41 @@ tr:hover td { background: rgba(255,255,255,0.02); }
       <div id="decode-output" class="decode-output hidden">
         <pre id="decode-json"></pre>
       </div>
+    </div>
+
+    <!-- Send Lightning -->
+    <div class="tab-content hidden" id="tab-pay">
+      <h2 style="margin-bottom:16px;">Send Lightning</h2>
+      <div class="form-group">
+        <label>Destination</label>
+        <input type="text" id="pay-destination" placeholder="BOLT11 / BOLT12 offer / LNURL / user@domain">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Amount (sats)</label>
+          <input type="number" id="pay-amount" min="1" placeholder="Required for variable-amount destinations">
+        </div>
+        <div class="form-group">
+          <label>Wait (seconds)</label>
+          <input type="number" id="pay-wait" min="0" max="50" placeholder="0-50, default 30">
+        </div>
+      </div>
+      <details style="margin-bottom:16px;">
+        <summary style="cursor:pointer;color:var(--fg2);font-size:0.9em;">BOLT12 options</summary>
+        <div class="form-row" style="margin-top:8px;">
+          <div class="form-group">
+            <label>Payer note</label>
+            <input type="text" id="pay-payer-note" placeholder="BOLT12 only">
+          </div>
+          <div class="form-group">
+            <label>Quantity</label>
+            <input type="number" id="pay-quantity" min="1" placeholder="BOLT12 only">
+          </div>
+        </div>
+      </details>
+      <div id="pay-error"></div>
+      <div id="pay-success" class="hidden"></div>
+      <button class="btn btn-primary" id="btn-pay">Send</button>
     </div>
 
     <!-- Send On-chain -->
@@ -945,6 +981,70 @@ async function decodeInput() {
   }
 }
 
+// ─── Send Lightning ───
+async function payLightning() {
+  const destination = $('#pay-destination').value.trim();
+  const amount = $('#pay-amount').value;
+  const wait = $('#pay-wait').value;
+  const payerNote = $('#pay-payer-note').value.trim();
+  const quantity = $('#pay-quantity').value;
+
+  if (!destination) {
+    showFormError('pay-error', 'Destination is required.');
+    return;
+  }
+  clearFormError('pay-error');
+  hide($('#pay-success'));
+
+  const params = { destination };
+  if (amount) params.amountSat = amount;
+  if (wait !== '') params.waitForPaymentSecs = wait;
+  if (payerNote) params.payerNote = payerNote;
+  if (quantity) params.quantity = quantity;
+
+  $('#btn-pay').disabled = true;
+  $('#btn-pay').textContent = 'Sending...';
+  try {
+    const result = await api('POST', '/pay', params);
+    const status = (result.status || 'PENDING').toLowerCase();
+    const cls = status === 'succeeded' ? 'alert-success'
+              : status === 'failed' ? 'alert-error'
+              : 'alert';
+    const fee = result.feeSat != null ? `${formatSats(result.feeSat)} sats` : '—';
+    const reason = result.reason ? `<div><strong>Reason:</strong> ${escapeHtml(result.reason)}</div>` : '';
+    const preimage = result.preimage
+      ? `<div style="word-break:break-all;"><strong>Preimage:</strong> <span class="mono">${escapeHtml(result.preimage)}</span></div>`
+      : '';
+    const hash = result.paymentHash
+      ? `<div style="word-break:break-all;"><strong>Hash:</strong> <span class="mono">${escapeHtml(result.paymentHash)}</span></div>`
+      : '';
+    const el = $('#pay-success');
+    el.className = 'alert ' + cls;
+    el.innerHTML = `
+      <div><strong>Status:</strong> ${escapeHtml(status.toUpperCase())}</div>
+      <div style="word-break:break-all;"><strong>Payment ID:</strong> <span class="mono">${escapeHtml(result.paymentId)}</span></div>
+      ${hash}
+      ${preimage}
+      <div><strong>Fee:</strong> ${fee}</div>
+      ${reason}
+    `;
+    show(el);
+    if (status === 'succeeded') {
+      $('#pay-destination').value = '';
+      $('#pay-amount').value = '';
+      $('#pay-payer-note').value = '';
+      $('#pay-quantity').value = '';
+    }
+    refreshDashboard();
+    refreshOutgoing();
+  } catch (e) {
+    showFormError('pay-error', e.message);
+  } finally {
+    $('#btn-pay').disabled = false;
+    $('#btn-pay').textContent = 'Send';
+  }
+}
+
 // ─── Send On-chain ───
 let pendingSend = null;
 
@@ -1100,6 +1200,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Decode
   $('#btn-decode').addEventListener('click', decodeInput);
+
+  // Send Lightning
+  $('#btn-pay').addEventListener('click', payLightning);
 
   // Send On-chain
   $('#btn-send').addEventListener('click', sendOnchain);

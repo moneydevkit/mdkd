@@ -697,3 +697,14 @@ pub fn random_mnemonic() -> String {
         .expect("12-word mnemonic")
         .to_string()
 }
+
+// ---------------------------------------------------------------------------
+// LNURL bech32 helper
+// ---------------------------------------------------------------------------
+
+/// bech32-encode an HTTP URL into an `lnurl1...` string the
+/// `bitcoin-payment-instructions` resolver can decode and fetch.
+pub fn encode_lnurl(url: &str) -> String {
+    let hrp = bech32::Hrp::parse("lnurl").expect("valid hrp");
+    bech32::encode::<bech32::Bech32>(hrp, url.as_bytes()).expect("bech32 encode")
+}

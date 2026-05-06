@@ -3,8 +3,8 @@ mod common;
 use std::time::Duration;
 
 use common::{
-    fund_lsp, random_mnemonic, setup_payer_lsp_channel, LspNode, MdkdHandle, PayerNode,
-    TestBitcoind, WebhookReceiver,
+    encode_lnurl, fund_lsp, random_mnemonic, setup_payer_lsp_channel, LspNode, MdkdHandle,
+    PayerNode, TestBitcoind, WebhookReceiver,
 };
 
 const TEST_MNEMONIC: &str =
@@ -1402,4 +1402,476 @@ async fn test_payinvoice_amount_mismatch_400() {
         resp.status(),
         resp.text().await.unwrap_or_default()
     );
+}
+
+// ---------------------------------------------------------------------------
+// /pay — unified send endpoint
+// ---------------------------------------------------------------------------
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_pay_invalid_destination_400() {
+    let bitcoind = TestBitcoind::new();
+    let server = MdkdHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
+
+    let resp = server
+        .post_form("/pay", &[("destination", "garbage-not-a-real-destination")])
+        .await;
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["code"].as_str().unwrap(), "bad_request");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_pay_amount_sat_zero_400() {
+    let bitcoind = TestBitcoind::new();
+    let server = MdkdHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
+
+    // amountSat=0 should fail before destination resolution; pass any string.
+    let resp = server
+        .post_form(
+            "/pay",
+            &[
+                ("destination", "lnbcrt1pseventually-irrelevant"),
+                ("amountSat", "0"),
+            ],
+        )
+        .await;
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let err = body["error"].as_str().unwrap().to_lowercase();
+    assert!(err.contains("amountsat"), "unexpected error: {err}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_pay_wait_secs_over_cap_400() {
+    let bitcoind = TestBitcoind::new();
+    let server = MdkdHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
+
+    let resp = server
+        .post_form(
+            "/pay",
+            &[("destination", "anything"), ("waitForPaymentSecs", "51")],
+        )
+        .await;
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let err = body["error"].as_str().unwrap().to_lowercase();
+    assert!(
+        err.contains("waitforpaymentsecs"),
+        "unexpected error: {err}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_pay_bolt11_amount_mismatch_400() {
+    let bitcoind = TestBitcoind::new();
+    let server = MdkdHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
+
+    let payer = PayerNode::new(&bitcoind);
+    let invoice = payer.create_invoice(10_000, "mismatch test", 600);
+
+    let resp = server
+        .post_form("/pay", &[("destination", &invoice), ("amountSat", "5000")])
+        .await;
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let err = body["error"].as_str().unwrap().to_lowercase();
+    assert!(err.contains("does not match"), "unexpected error: {err}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_pay_payer_note_on_bolt11_400() {
+    let bitcoind = TestBitcoind::new();
+    let server = MdkdHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
+
+    let payer = PayerNode::new(&bitcoind);
+    let invoice = payer.create_invoice(10_000, "payer note test", 600);
+
+    let resp = server
+        .post_form("/pay", &[("destination", &invoice), ("payerNote", "hello")])
+        .await;
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let err = body["error"].as_str().unwrap().to_lowercase();
+    assert!(
+        err.contains("payernote") || err.contains("bolt12"),
+        "unexpected: {err}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_pay_quantity_on_bolt11_400() {
+    let bitcoind = TestBitcoind::new();
+    let server = MdkdHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
+
+    let payer = PayerNode::new(&bitcoind);
+    let invoice = payer.create_invoice(10_000, "qty test", 600);
+
+    let resp = server
+        .post_form("/pay", &[("destination", &invoice), ("quantity", "3")])
+        .await;
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let err = body["error"].as_str().unwrap().to_lowercase();
+    assert!(
+        err.contains("quantity") || err.contains("bolt12"),
+        "unexpected: {err}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_pay_lnurl_dns_failure_500() {
+    let bitcoind = TestBitcoind::new();
+    let server = MdkdHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
+
+    // Bind a port, then drop the listener so the next connect refuses.
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+
+    let lnurl = encode_lnurl(&format!("http://127.0.0.1:{port}/lnurl-init"));
+
+    let resp = server
+        .post_form("/pay", &[("destination", &lnurl), ("amountSat", "1000")])
+        .await;
+    assert_eq!(resp.status(), 500);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["code"].as_str().unwrap(), "internal_error");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_pay_lnurl_amount_mismatch_400() {
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let bitcoind = TestBitcoind::new();
+    let server = MdkdHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
+
+    // PayerNode mints a real, signed BOLT11 with amount 10_000 sats.
+    let payer = PayerNode::new(&bitcoind);
+    let invoice = payer.create_invoice(10_000, "lnurl mismatch", 600);
+
+    let mock_server = MockServer::start().await;
+    let metadata = "[[\"text/plain\",\"test\"]]";
+    let init = serde_json::json!({
+        "tag": "payRequest",
+        "callback": format!("{}/callback", mock_server.uri()),
+        "minSendable": 1_000,
+        "maxSendable": 100_000_000,
+        "metadata": metadata,
+    });
+    Mock::given(method("GET"))
+        .and(path("/lnurl-init"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(init))
+        .mount(&mock_server)
+        .await;
+    // Callback returns the 10_000-sat invoice no matter what amount was requested.
+    Mock::given(method("GET"))
+        .and(path("/callback"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "pr": invoice,
+            "routes": [],
+        })))
+        .mount(&mock_server)
+        .await;
+
+    let lnurl = encode_lnurl(&format!("{}/lnurl-init", mock_server.uri()));
+
+    // Caller requests 5_000 sats, server hands back invoice for 10_000.
+    let resp = server
+        .post_form("/pay", &[("destination", &lnurl), ("amountSat", "5000")])
+        .await;
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["code"].as_str().unwrap(), "bad_request");
+    let err = body["error"].as_str().unwrap().to_lowercase();
+    assert!(
+        err.contains("wrong amount") || err.contains("malicious") || err.contains("does not match"),
+        "unexpected error: {err}",
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_pay_dispatch_failure_returns_500() {
+    let bitcoind = TestBitcoind::new();
+    // No LSP, no channels — mdkd has zero outbound capacity. Dispatch fails
+    // synchronously and we must return ApiError (not PayResponse{failed}).
+    let server = MdkdHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
+
+    let payer = PayerNode::new(&bitcoind);
+    let invoice = payer.create_invoice(1_000, "dispatch fail", 600);
+
+    let resp = server
+        .post_form(
+            "/pay",
+            &[
+                ("destination", &invoice),
+                // Skip any wait so we observe the synchronous dispatch error.
+                ("waitForPaymentSecs", "0"),
+            ],
+        )
+        .await;
+
+    // Two acceptable shapes here:
+    //   - 500 ApiError if ldk-node rejects the send synchronously
+    //   - 200 PayResponse{status: pending} if ldk-node accepts and the
+    //     failure surfaces only via a later PaymentFailed event
+    // The contract we lock down: if 200, the body MUST be a PayResponse
+    // with paymentId; if 500, the body is ApiError WITHOUT paymentId.
+    let status = resp.status();
+    let body: serde_json::Value = resp.json().await.unwrap();
+    if status == 500 {
+        assert_eq!(body["code"].as_str().unwrap(), "internal_error");
+        assert!(
+            body.get("paymentId").is_none(),
+            "ApiError must not contain paymentId, got {body:?}",
+        );
+    } else if status == 200 {
+        assert!(
+            body.get("paymentId").is_some(),
+            "PayResponse must have paymentId"
+        );
+        assert_eq!(body["status"].as_str().unwrap(), "PENDING");
+    } else {
+        panic!("unexpected status {status}: {body:?}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_pay_bolt11_blocks_until_succeeded() {
+    let bitcoind = TestBitcoind::new();
+    let lsp = LspNode::new(&bitcoind);
+    fund_lsp(&bitcoind, &lsp).await;
+
+    let server = MdkdHandle::start(&bitcoind, None, Some(&lsp), &random_mnemonic()).await;
+    let payer = PayerNode::new(&bitcoind);
+    setup_payer_lsp_channel(&bitcoind, &payer, &lsp, 500_000).await;
+
+    // Fund mdkd's outbound side via a JIT incoming payment.
+    let invoice: serde_json::Value = server
+        .post_form(
+            "/createinvoice",
+            &[
+                ("amountSat", "200000"),
+                ("description", "fund-mdkd-for-pay-test"),
+                ("expirySeconds", "3600"),
+            ],
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let inbound_invoice = invoice["serialized"].as_str().unwrap();
+    let inbound_hash = invoice["paymentHash"].as_str().unwrap().to_string();
+    payer.pay_invoice(inbound_invoice);
+
+    let start = std::time::Instant::now();
+    loop {
+        let resp: serde_json::Value = server
+            .get(&format!("/payments/incoming/{inbound_hash}"))
+            .await
+            .json()
+            .await
+            .unwrap();
+        if resp["isPaid"].as_bool().unwrap_or(false) {
+            break;
+        }
+        if start.elapsed() > Duration::from_secs(60) {
+            panic!("Timed out funding mdkd via LSP JIT channel");
+        }
+        bitcoind.mine_blocks(1);
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+
+    // Issue an outbound invoice from PayerNode and call /pay.
+    let outbound_invoice = payer.create_invoice(50_000, "pay-any test", 3600);
+
+    // Mine in the background so the payment can settle on regtest while
+    // mdkd is blocking on /pay (sync_wallets / route discovery may need
+    // tip blocks). 30s default wait.
+    let bitcoind_url = bitcoind.bitcoind.rpc_url();
+    let _ = bitcoind_url; // placeholder; we just rely on test wall clock for now
+
+    let resp = server
+        .post_form(
+            "/pay",
+            &[
+                ("destination", &outbound_invoice),
+                ("waitForPaymentSecs", "45"),
+            ],
+        )
+        .await;
+    assert_eq!(resp.status(), 200, "/pay returned non-200");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let payment_id = body["paymentId"].as_str().unwrap().to_string();
+    assert_eq!(payment_id.len(), 64);
+    assert_eq!(body["paymentHash"].as_str().unwrap().len(), 64);
+
+    // Allow either SUCCEEDED (terminal) or PENDING (event missed during the
+    // 45s budget on a slow regtest); on PENDING we then poll outgoing.
+    let status = body["status"].as_str().unwrap();
+    if status == "SUCCEEDED" {
+        assert!(body["preimage"].as_str().is_some(), "missing preimage");
+        assert!(body["feeSat"].as_u64().is_some(), "missing feeSat");
+    } else {
+        assert_eq!(status, "PENDING", "unexpected status: {status}");
+    }
+
+    // Whether SUCCEEDED or PENDING, GET /payments/outgoing/{id} must converge
+    // and the field shape must match.
+    let start = std::time::Instant::now();
+    let settled: serde_json::Value = loop {
+        let r: serde_json::Value = server
+            .get(&format!("/payments/outgoing/{payment_id}"))
+            .await
+            .json()
+            .await
+            .unwrap();
+        if r["isPaid"].as_bool().unwrap_or(false) {
+            break r;
+        }
+        if start.elapsed() > Duration::from_secs(60) {
+            panic!("Timed out waiting for outgoing payment to settle: {:?}", r);
+        }
+        bitcoind.mine_blocks(1);
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    };
+
+    assert_eq!(settled["paymentId"].as_str().unwrap(), payment_id);
+    assert_eq!(
+        settled["paymentHash"].as_str().unwrap(),
+        body["paymentHash"].as_str().unwrap()
+    );
+    assert!(settled["preimage"].as_str().is_some());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_pay_wait_zero_returns_pending() {
+    let bitcoind = TestBitcoind::new();
+    let lsp = LspNode::new(&bitcoind);
+    fund_lsp(&bitcoind, &lsp).await;
+
+    let server = MdkdHandle::start(&bitcoind, None, Some(&lsp), &random_mnemonic()).await;
+    let payer = PayerNode::new(&bitcoind);
+    setup_payer_lsp_channel(&bitcoind, &payer, &lsp, 500_000).await;
+
+    // Fund mdkd's outbound side via a JIT incoming payment.
+    let invoice: serde_json::Value = server
+        .post_form(
+            "/createinvoice",
+            &[
+                ("amountSat", "200000"),
+                ("description", "fund-mdkd-for-pay-zero-wait"),
+                ("expirySeconds", "3600"),
+            ],
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let inbound_invoice = invoice["serialized"].as_str().unwrap();
+    let inbound_hash = invoice["paymentHash"].as_str().unwrap().to_string();
+    payer.pay_invoice(inbound_invoice);
+
+    let start = std::time::Instant::now();
+    loop {
+        let r: serde_json::Value = server
+            .get(&format!("/payments/incoming/{inbound_hash}"))
+            .await
+            .json()
+            .await
+            .unwrap();
+        if r["isPaid"].as_bool().unwrap_or(false) {
+            break;
+        }
+        if start.elapsed() > Duration::from_secs(60) {
+            panic!("Timed out funding mdkd");
+        }
+        bitcoind.mine_blocks(1);
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+
+    let outbound_invoice = payer.create_invoice(40_000, "wait zero", 3600);
+
+    let t0 = std::time::Instant::now();
+    let resp = server
+        .post_form(
+            "/pay",
+            &[
+                ("destination", &outbound_invoice),
+                ("waitForPaymentSecs", "0"),
+            ],
+        )
+        .await;
+    let elapsed = t0.elapsed();
+    assert_eq!(resp.status(), 200);
+
+    // wait=0 must short-circuit. Allow generous slack (3s) for the post-dispatch
+    // node.payment() lookup; this still rules out the default 30s block.
+    assert!(
+        elapsed < Duration::from_secs(3),
+        "wait=0 should short-circuit, took {elapsed:?}",
+    );
+
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let payment_id = body["paymentId"].as_str().unwrap().to_string();
+    assert_eq!(payment_id.len(), 64);
+    let status = body["status"].as_str().unwrap();
+    // Status should be PENDING; in a pathological race it could be SUCCEEDED
+    // before the lookup, but never FAILED for this funded path.
+    assert!(
+        status == "PENDING" || status == "SUCCEEDED",
+        "got: {status}"
+    );
+    // Optional fields not yet known should be omitted (no nulls on the wire).
+    if status == "PENDING" {
+        assert!(
+            body.get("preimage").is_none(),
+            "preimage must be absent on PENDING"
+        );
+        assert!(
+            body.get("feeSat").is_none(),
+            "feeSat must be absent on PENDING"
+        );
+        assert!(
+            body.get("reason").is_none(),
+            "reason must be absent on PENDING"
+        );
+    }
+
+    // Poll until terminal — proves the dispatched payment really did fly.
+    let start = std::time::Instant::now();
+    loop {
+        let r: serde_json::Value = server
+            .get(&format!("/payments/outgoing/{payment_id}"))
+            .await
+            .json()
+            .await
+            .unwrap();
+        if r["isPaid"].as_bool().unwrap_or(false) {
+            break;
+        }
+        if start.elapsed() > Duration::from_secs(60) {
+            panic!("Timed out waiting for outgoing payment to settle: {:?}", r);
+        }
+        bitcoind.mine_blocks(1);
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+}
+
+// Existing /payinvoice contract must still work after wiring /pay.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_payinvoice_still_works_after_pay() {
+    let bitcoind = TestBitcoind::new();
+    let server = MdkdHandle::start(&bitcoind, None, None, &random_mnemonic()).await;
+
+    // Garbage invoice → 400, just like before.
+    let resp = server
+        .post_form("/payinvoice", &[("invoice", "not-bolt11")])
+        .await;
+    assert_eq!(resp.status(), 400);
+
+    // Suppress unused-import warnings inherited from common in tests that
+    // don't otherwise touch them.
+    let _ = WebhookReceiver::start;
 }

@@ -266,3 +266,36 @@ pub struct ApiError {
     pub error: String,
     pub code: String,
 }
+
+#[derive(Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PayRequest {
+    pub destination: String,
+    pub amount_sat: Option<u64>,
+    pub wait_for_payment_secs: Option<u64>,
+    pub payer_note: Option<String>,
+    pub quantity: Option<u64>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum PayStatus {
+    Succeeded,
+    Failed,
+    Pending,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PayResponse {
+    pub payment_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payment_hash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preimage: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fee_sat: Option<u64>,
+    pub status: PayStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
