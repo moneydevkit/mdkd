@@ -7,6 +7,7 @@ pub mod info;
 pub mod invoices;
 pub mod onchain;
 pub mod pay;
+pub mod pay_any;
 pub mod websocket;
 
 use std::sync::Arc;
@@ -32,7 +33,7 @@ use crate::daemon::types::{
     DecodeInvoiceRequest, DecodeInvoiceResponse, DecodeOfferRequest, DecodeOfferResponse,
     GetBalanceResponse, GetInfoResponse, IncomingPaymentResponse, ListOutgoingPaymentsRequest,
     ListPaymentsRequest, OutgoingPaymentResponse, PayInvoiceRequest, PayInvoiceResponse,
-    SendToAddressRequest,
+    PayRequest, PayResponse, SendToAddressRequest,
 };
 
 #[derive(Clone)]
@@ -89,6 +90,7 @@ pub fn router(state: AppState) -> Router {
         .routes(routes!(close_channel))
         .routes(routes!(send_to_address))
         .routes(routes!(pay_invoice))
+        .routes(routes!(pay))
         .layer(middleware::from_fn(auth::require_full_access));
 
     let (router, api) = OpenApiRouter::with_openapi(ApiDoc::openapi())
@@ -319,4 +321,21 @@ async fn pay_invoice(
     Form(req): Form<PayInvoiceRequest>,
 ) -> Result<Json<PayInvoiceResponse>, AppError> {
     Ok(Json(pay::handle_pay_invoice(state.node, &req).await?))
+}
+
+#[utoipa::path(
+    post, path = "/pay", tag = "send",
+    request_body(content = PayRequest, content_type = "application/x-www-form-urlencoded"),
+    responses(
+        (status = 200, body = PayResponse),
+        (status = 400, body = ApiError),
+        (status = 500, body = ApiError),
+    ),
+    security(("basic_auth" = []))
+)]
+async fn pay(
+    State(state): State<AppState>,
+    Form(req): Form<PayRequest>,
+) -> Result<Json<PayResponse>, AppError> {
+    Ok(Json(pay_any::handle_pay(state, &req).await?))
 }
