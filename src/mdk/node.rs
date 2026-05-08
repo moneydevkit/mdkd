@@ -10,7 +10,10 @@ use ldk_node::bitcoin::secp256k1::PublicKey;
 use ldk_node::bitcoin::Network;
 use ldk_node::config::Config as LdkNodeConfig;
 use ldk_node::lightning::ln::msgs::SocketAddress;
-use ldk_node::{Builder, Node};
+use ldk_node::lightning::routing::scoring::{
+    ProbabilisticScoringDecayParameters, ProbabilisticScoringFeeParameters,
+};
+use ldk_node::{Builder, Node, ProbabilisticScoringParameters};
 use log::info;
 
 use crate::mdk::config::{ChainSource, NetworkInfra};
@@ -46,6 +49,10 @@ pub fn build_node(
 
     let mut builder = Builder::from_config(ldk_config);
     builder.set_log_facade_logger();
+
+    if let Some(scoring_params) = network_scoring_params(config.network) {
+        builder.set_scoring_params(scoring_params);
+    }
 
     if let Some(ref proxy_url) = config.socks_proxy {
         let addr = resolve_socks_proxy(proxy_url)?;
@@ -125,6 +132,35 @@ fn resolve_socks_proxy(raw: &str) -> Result<std::net::SocketAddr, MdkError> {
         .ok()
         .and_then(|mut addrs| addrs.next())
         .ok_or_else(|| MdkError::InvalidInput(format!("cannot resolve SOCKS5 proxy: {host_port}")))
+}
+
+/// Per-network defaults for the probabilistic scorer.
+///
+/// Mainnet biases pathfinding toward fewer hops by raising `base_penalty_msat`
+/// to 100x the LDK default (1024 → 102_400 msat). All other fields are pinned
+/// to upstream LDK defaults so any future drift in ldk-node's defaults does
+/// not silently change routing behavior. Other networks fall through to
+/// ldk-node's own defaults (no `set_scoring_params` call).
+fn network_scoring_params(network: Network) -> Option<ProbabilisticScoringParameters> {
+    match network {
+        Network::Bitcoin => Some(ProbabilisticScoringParameters {
+            fee_params: ProbabilisticScoringFeeParameters {
+                base_penalty_msat: 102_400,
+                base_penalty_amount_multiplier_msat: 131_072,
+                liquidity_penalty_multiplier_msat: 0,
+                liquidity_penalty_amount_multiplier_msat: 0,
+                historical_liquidity_penalty_multiplier_msat: 10_000,
+                historical_liquidity_penalty_amount_multiplier_msat: 1_250,
+                manual_node_penalties: Default::default(),
+                anti_probing_penalty_msat: 250,
+                considered_impossible_penalty_msat: 100_000_000_000,
+                linear_success_probability: false,
+                probing_diversity_penalty_msat: 0,
+            },
+            decay_params: ProbabilisticScoringDecayParameters::default(),
+        }),
+        _ => None,
+    }
 }
 
 pub fn derive_vss_identifier(mnemonic: &Mnemonic) -> String {
