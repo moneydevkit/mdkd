@@ -10,8 +10,11 @@ use ldk_node::bitcoin::secp256k1::PublicKey;
 use ldk_node::bitcoin::Network;
 use ldk_node::config::Config as LdkNodeConfig;
 use ldk_node::lightning::ln::msgs::SocketAddress;
-use ldk_node::{Builder, Node};
-use log::info;
+use ldk_node::lightning::routing::scoring::{
+    ProbabilisticScoringDecayParameters, ProbabilisticScoringFeeParameters,
+};
+use ldk_node::{Builder, Node, ProbabilisticScoringParameters};
+use log::{info, warn};
 
 use crate::mdk::config::{ChainSource, NetworkInfra};
 use crate::mdk::error::MdkError;
@@ -26,6 +29,52 @@ pub struct NodeConfig {
     pub pathfinding_scores_source_url: Option<String>,
     pub mnemonic: String,
     pub infra: NetworkInfra,
+    pub scoring_overrides: ScoringOverrides,
+}
+
+/// Per-field overrides for the probabilistic scorer's fee parameters.
+///
+/// Only applied on mainnet; ignored elsewhere (with a warning if non-empty).
+/// Decay parameters and `manual_node_penalties` are not user-tunable.
+#[derive(Debug, Default, Clone)]
+pub struct ScoringOverrides {
+    pub base_penalty_msat: Option<u64>,
+    pub base_penalty_amount_multiplier_msat: Option<u64>,
+    pub liquidity_penalty_multiplier_msat: Option<u64>,
+    pub liquidity_penalty_amount_multiplier_msat: Option<u64>,
+    pub historical_liquidity_penalty_multiplier_msat: Option<u64>,
+    pub historical_liquidity_penalty_amount_multiplier_msat: Option<u64>,
+    pub anti_probing_penalty_msat: Option<u64>,
+    pub considered_impossible_penalty_msat: Option<u64>,
+    pub linear_success_probability: Option<bool>,
+    pub probing_diversity_penalty_msat: Option<u64>,
+}
+
+impl ScoringOverrides {
+    pub fn is_empty(&self) -> bool {
+        let Self {
+            base_penalty_msat,
+            base_penalty_amount_multiplier_msat,
+            liquidity_penalty_multiplier_msat,
+            liquidity_penalty_amount_multiplier_msat,
+            historical_liquidity_penalty_multiplier_msat,
+            historical_liquidity_penalty_amount_multiplier_msat,
+            anti_probing_penalty_msat,
+            considered_impossible_penalty_msat,
+            linear_success_probability,
+            probing_diversity_penalty_msat,
+        } = self;
+        base_penalty_msat.is_none()
+            && base_penalty_amount_multiplier_msat.is_none()
+            && liquidity_penalty_multiplier_msat.is_none()
+            && liquidity_penalty_amount_multiplier_msat.is_none()
+            && historical_liquidity_penalty_multiplier_msat.is_none()
+            && historical_liquidity_penalty_amount_multiplier_msat.is_none()
+            && anti_probing_penalty_msat.is_none()
+            && considered_impossible_penalty_msat.is_none()
+            && linear_success_probability.is_none()
+            && probing_diversity_penalty_msat.is_none()
+    }
 }
 
 pub fn build_node(
@@ -46,6 +95,15 @@ pub fn build_node(
 
     let mut builder = Builder::from_config(ldk_config);
     builder.set_log_facade_logger();
+
+    if config.network == Network::Bitcoin {
+        builder.set_scoring_params(resolve_scoring_params(&config.scoring_overrides));
+    } else if !config.scoring_overrides.is_empty() {
+        warn!(
+            "[node.scoring] overrides are mainnet-only; ignoring on {}",
+            config.network
+        );
+    }
 
     if let Some(ref proxy_url) = config.socks_proxy {
         let addr = resolve_socks_proxy(proxy_url)?;
@@ -127,7 +185,115 @@ fn resolve_socks_proxy(raw: &str) -> Result<std::net::SocketAddr, MdkError> {
         .ok_or_else(|| MdkError::InvalidInput(format!("cannot resolve SOCKS5 proxy: {host_port}")))
 }
 
+/// Mainnet scoring parameters with user overrides applied on top.
+///
+/// Baseline biases pathfinding toward fewer hops by raising `base_penalty_msat`
+/// to 100x the LDK default (1024 → 102_400 msat). All other fields are pinned
+/// to upstream LDK defaults so any future drift in ldk-node's defaults does
+/// not silently change routing behavior on us. Each field set in `overrides`
+/// replaces the corresponding baseline value.
+fn resolve_scoring_params(overrides: &ScoringOverrides) -> ProbabilisticScoringParameters {
+    let mut params = ProbabilisticScoringParameters {
+        fee_params: ProbabilisticScoringFeeParameters {
+            base_penalty_msat: 102_400,
+            base_penalty_amount_multiplier_msat: 131_072,
+            liquidity_penalty_multiplier_msat: 0,
+            liquidity_penalty_amount_multiplier_msat: 0,
+            historical_liquidity_penalty_multiplier_msat: 10_000,
+            historical_liquidity_penalty_amount_multiplier_msat: 1_250,
+            manual_node_penalties: Default::default(),
+            anti_probing_penalty_msat: 250,
+            considered_impossible_penalty_msat: 100_000_000_000,
+            linear_success_probability: false,
+            probing_diversity_penalty_msat: 0,
+        },
+        decay_params: ProbabilisticScoringDecayParameters::default(),
+    };
+    let f = &mut params.fee_params;
+    if let Some(v) = overrides.base_penalty_msat {
+        f.base_penalty_msat = v;
+    }
+    if let Some(v) = overrides.base_penalty_amount_multiplier_msat {
+        f.base_penalty_amount_multiplier_msat = v;
+    }
+    if let Some(v) = overrides.liquidity_penalty_multiplier_msat {
+        f.liquidity_penalty_multiplier_msat = v;
+    }
+    if let Some(v) = overrides.liquidity_penalty_amount_multiplier_msat {
+        f.liquidity_penalty_amount_multiplier_msat = v;
+    }
+    if let Some(v) = overrides.historical_liquidity_penalty_multiplier_msat {
+        f.historical_liquidity_penalty_multiplier_msat = v;
+    }
+    if let Some(v) = overrides.historical_liquidity_penalty_amount_multiplier_msat {
+        f.historical_liquidity_penalty_amount_multiplier_msat = v;
+    }
+    if let Some(v) = overrides.anti_probing_penalty_msat {
+        f.anti_probing_penalty_msat = v;
+    }
+    if let Some(v) = overrides.considered_impossible_penalty_msat {
+        f.considered_impossible_penalty_msat = v;
+    }
+    if let Some(v) = overrides.linear_success_probability {
+        f.linear_success_probability = v;
+    }
+    if let Some(v) = overrides.probing_diversity_penalty_msat {
+        f.probing_diversity_penalty_msat = v;
+    }
+    params
+}
+
 pub fn derive_vss_identifier(mnemonic: &Mnemonic) -> String {
     let phrase = mnemonic.to_string();
     sha256::Hash::hash(phrase.as_bytes()).to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mainnet_default_uses_100x_base_penalty() {
+        let params = resolve_scoring_params(&ScoringOverrides::default());
+        assert_eq!(params.fee_params.base_penalty_msat, 102_400);
+        assert_eq!(params.fee_params.anti_probing_penalty_msat, 250);
+        assert_eq!(
+            params.fee_params.considered_impossible_penalty_msat,
+            100_000_000_000
+        );
+    }
+
+    #[test]
+    fn override_replaces_only_specified_fields() {
+        let overrides = ScoringOverrides {
+            base_penalty_msat: Some(7),
+            linear_success_probability: Some(true),
+            ..Default::default()
+        };
+        let params = resolve_scoring_params(&overrides);
+        // Overridden fields take new values.
+        assert_eq!(params.fee_params.base_penalty_msat, 7);
+        assert!(params.fee_params.linear_success_probability);
+        // Untouched fields keep the mainnet default.
+        assert_eq!(
+            params.fee_params.base_penalty_amount_multiplier_msat,
+            131_072
+        );
+        assert_eq!(params.fee_params.anti_probing_penalty_msat, 250);
+    }
+
+    #[test]
+    fn is_empty_distinguishes_default_from_any_override() {
+        assert!(ScoringOverrides::default().is_empty());
+        assert!(!ScoringOverrides {
+            base_penalty_msat: Some(0),
+            ..Default::default()
+        }
+        .is_empty());
+        assert!(!ScoringOverrides {
+            linear_success_probability: Some(false),
+            ..Default::default()
+        }
+        .is_empty());
+    }
 }
