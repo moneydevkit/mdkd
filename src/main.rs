@@ -131,6 +131,7 @@ fn main() {
         pathfinding_scores_source_url: config_file.pathfinding_scores_source_url,
         mnemonic: mnemonic_phrase,
         infra,
+        scoring_overrides: config_file.scoring_overrides,
     };
 
     // Separate HTTP client for daemon concerns (webhooks, expiry monitor).

@@ -7,6 +7,7 @@ use ldk_node::bitcoin::Network;
 use ldk_node::lightning::ln::msgs::SocketAddress;
 use ldk_node::lightning::routing::gossip::NodeAlias;
 use log::LevelFilter;
+use mdk::node::ScoringOverrides;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -24,6 +25,42 @@ struct NodeSection {
     rest_service_address: Option<String>,
     alias: Option<String>,
     pathfinding_scores_source_url: Option<String>,
+    scoring: Option<ScoringSection>,
+}
+
+/// `[node.scoring]` — overrides for `ProbabilisticScoringFeeParameters`.
+/// Any omitted field falls back to the network default (see `mdk::node`).
+#[derive(Deserialize, Default)]
+struct ScoringSection {
+    base_penalty_msat: Option<u64>,
+    base_penalty_amount_multiplier_msat: Option<u64>,
+    liquidity_penalty_multiplier_msat: Option<u64>,
+    liquidity_penalty_amount_multiplier_msat: Option<u64>,
+    historical_liquidity_penalty_multiplier_msat: Option<u64>,
+    historical_liquidity_penalty_amount_multiplier_msat: Option<u64>,
+    anti_probing_penalty_msat: Option<u64>,
+    considered_impossible_penalty_msat: Option<u64>,
+    linear_success_probability: Option<bool>,
+    probing_diversity_penalty_msat: Option<u64>,
+}
+
+impl From<ScoringSection> for ScoringOverrides {
+    fn from(s: ScoringSection) -> Self {
+        Self {
+            base_penalty_msat: s.base_penalty_msat,
+            base_penalty_amount_multiplier_msat: s.base_penalty_amount_multiplier_msat,
+            liquidity_penalty_multiplier_msat: s.liquidity_penalty_multiplier_msat,
+            liquidity_penalty_amount_multiplier_msat: s.liquidity_penalty_amount_multiplier_msat,
+            historical_liquidity_penalty_multiplier_msat: s
+                .historical_liquidity_penalty_multiplier_msat,
+            historical_liquidity_penalty_amount_multiplier_msat: s
+                .historical_liquidity_penalty_amount_multiplier_msat,
+            anti_probing_penalty_msat: s.anti_probing_penalty_msat,
+            considered_impossible_penalty_msat: s.considered_impossible_penalty_msat,
+            linear_success_probability: s.linear_success_probability,
+            probing_diversity_penalty_msat: s.probing_diversity_penalty_msat,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -52,6 +89,7 @@ pub struct MdkConfig {
     pub storage_dir_path: Option<String>,
     pub log_level: LevelFilter,
     pub pathfinding_scores_source_url: Option<String>,
+    pub scoring_overrides: ScoringOverrides,
 }
 
 pub fn load_config(path: &str) -> io::Result<MdkConfig> {
@@ -109,6 +147,8 @@ pub fn load_config(path: &str) -> io::Result<MdkConfig> {
         None => LevelFilter::Debug,
     };
 
+    let scoring_overrides = node.scoring.map(ScoringOverrides::from).unwrap_or_default();
+
     Ok(MdkConfig {
         network,
         listening_addrs,
@@ -118,6 +158,7 @@ pub fn load_config(path: &str) -> io::Result<MdkConfig> {
         storage_dir_path,
         log_level,
         pathfinding_scores_source_url: node.pathfinding_scores_source_url,
+        scoring_overrides,
     })
 }
 
