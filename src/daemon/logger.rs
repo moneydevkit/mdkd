@@ -3,6 +3,14 @@ use std::io::{self, Write};
 use chrono::{SecondsFormat, Utc};
 use log::{Level, LevelFilter, Log, Metadata, Record};
 
+/// Per-target log overrides. Crates that spew DEBUG/TRACE noise we
+/// almost never care about get clamped, regardless of the global
+/// filter.
+const TARGET_OVERRIDES: &[(&str, LevelFilter)] = &[
+    ("rustls", LevelFilter::Warn),
+    ("hyper_util", LevelFilter::Warn),
+];
+
 pub fn init(level: LevelFilter) {
     log::set_boxed_logger(Box::new(ConsoleLogger(level))).expect("logger already set");
     log::set_max_level(level);
@@ -12,7 +20,12 @@ struct ConsoleLogger(LevelFilter);
 
 impl Log for ConsoleLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        metadata.level() <= self.0
+        let max = TARGET_OVERRIDES
+            .iter()
+            .find(|(prefix, _)| metadata.target().starts_with(prefix))
+            .map(|(_, lvl)| *lvl)
+            .unwrap_or(self.0);
+        metadata.level() <= max
     }
 
     fn log(&self, record: &Record) {
