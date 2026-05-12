@@ -133,6 +133,10 @@ dir_path = "{storage_dir}"
 rpc_address = "{rpc_address}"
 rpc_user = "{rpc_user}"
 rpc_password = "{rpc_password}"
+
+[splice]
+enabled = true
+poll_interval_secs = 1
 "#,
             storage_dir = storage_dir.display(),
         );

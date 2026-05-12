@@ -132,6 +132,7 @@ fn main() {
         mnemonic: mnemonic_phrase,
         infra,
         scoring_overrides: config_file.scoring_overrides,
+        splice: config_file.splice,
     };
 
     // Separate HTTP client for daemon concerns (webhooks, expiry monitor).

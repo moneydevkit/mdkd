@@ -21,6 +21,7 @@ impl From<MdkError> for AppError {
             MdkError::Node(msg) => AppError::Internal(msg),
             MdkError::Platform { message, .. } => AppError::Internal(message),
             MdkError::Network(msg) => AppError::Internal(msg),
+            MdkError::Splice(e) => AppError::Internal(e.to_string()),
         }
     }
 }

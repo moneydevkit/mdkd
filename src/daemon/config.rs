@@ -2,6 +2,7 @@ use std::io;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::time::Duration;
 
 use ldk_node::bitcoin::Network;
 use ldk_node::lightning::ln::msgs::SocketAddress;
@@ -10,11 +11,14 @@ use log::LevelFilter;
 use mdk::node::ScoringOverrides;
 use serde::Deserialize;
 
+use mdk::node::SpliceConfig;
+
 #[derive(Deserialize)]
 struct TomlConfig {
     node: Option<NodeSection>,
     storage: Option<StorageSection>,
     log: Option<LogSection>,
+    splice: Option<SpliceSection>,
 }
 
 #[derive(Deserialize)]
@@ -80,6 +84,12 @@ struct LogSection {
     file: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct SpliceSection {
+    enabled: Option<bool>,
+    poll_interval_secs: Option<u64>,
+}
+
 pub struct MdkConfig {
     pub network: Network,
     pub listening_addrs: Option<Vec<SocketAddress>>,
@@ -90,6 +100,7 @@ pub struct MdkConfig {
     pub log_level: LevelFilter,
     pub pathfinding_scores_source_url: Option<String>,
     pub scoring_overrides: ScoringOverrides,
+    pub splice: SpliceConfig,
 }
 
 pub fn load_config(path: &str) -> io::Result<MdkConfig> {
@@ -148,6 +159,19 @@ pub fn load_config(path: &str) -> io::Result<MdkConfig> {
     };
 
     let scoring_overrides = node.scoring.map(ScoringOverrides::from).unwrap_or_default();
+    let splice = match toml.splice {
+        Some(s) => {
+            let defaults = SpliceConfig::default();
+            SpliceConfig {
+                enabled: s.enabled.unwrap_or(defaults.enabled),
+                poll_interval: s
+                    .poll_interval_secs
+                    .map(Duration::from_secs)
+                    .unwrap_or(defaults.poll_interval),
+            }
+        }
+        None => SpliceConfig::default(),
+    };
 
     Ok(MdkConfig {
         network,
@@ -159,6 +183,7 @@ pub fn load_config(path: &str) -> io::Result<MdkConfig> {
         log_level,
         pathfinding_scores_source_url: node.pathfinding_scores_source_url,
         scoring_overrides,
+        splice,
     })
 }
 

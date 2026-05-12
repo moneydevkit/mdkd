@@ -103,6 +103,24 @@ pub enum MdkEvent {
     PaymentForwarded {
         fee_earned_sats: Option<u64>,
     },
+    /// The splice manager has called `splice_in` on a channel and
+    /// ldk-node accepted the request. Funding-tx broadcast follows.
+    SpliceInitiated {
+        channel_id: String,
+    },
+    /// A splice transaction has been broadcast and is awaiting
+    /// on-chain confirmation. Mirrors `ldk_node::Event::SplicePending`.
+    SplicePending {
+        channel_id: String,
+        new_funding_txid: String,
+    },
+    /// A splice attempt failed — either synchronously from
+    /// `splice_in` (peer offline, fee too low, etc.) or after
+    /// negotiation via `ldk_node::Event::SpliceFailed`.
+    SpliceFailed {
+        channel_id: String,
+        reason: String,
+    },
 }
 
 pub struct PaymentResult {

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::net::ToSocketAddrs;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use ldk_node::bip39::Mnemonic;
 use ldk_node::bitcoin::hashes::sha256;
@@ -30,6 +31,7 @@ pub struct NodeConfig {
     pub mnemonic: String,
     pub infra: NetworkInfra,
     pub scoring_overrides: ScoringOverrides,
+    pub splice: SpliceConfig,
 }
 
 /// Per-field overrides for the probabilistic scorer's fee parameters.
@@ -74,6 +76,24 @@ impl ScoringOverrides {
             && considered_impossible_penalty_msat.is_none()
             && linear_success_probability.is_none()
             && probing_diversity_penalty_msat.is_none()
+    }
+}
+
+/// Configuration for the auto-splice manager. The manager wakes up
+/// every `poll_interval`, reads the spendable on-chain balance, and
+/// splices it into an existing LSP channel when one is available.
+#[derive(Debug, Clone)]
+pub struct SpliceConfig {
+    pub enabled: bool,
+    pub poll_interval: Duration,
+}
+
+impl Default for SpliceConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            poll_interval: Duration::from_secs(30),
+        }
     }
 }
 
