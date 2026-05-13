@@ -195,7 +195,7 @@
             commonArgs
             // {
               inherit cargoArtifacts;
-              cargoNextestExtraArgs = "--bin mdkd";
+              cargoNextestExtraArgs = "--lib --bin mdkd";
             }
           );
         };

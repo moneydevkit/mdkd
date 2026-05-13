@@ -94,9 +94,9 @@ integration-test *args:
 fix:
     cargo clippy --all-targets --fix --allow-dirty --allow-staged
 
-# Run tests (unit + doc; use `just integration-test` for integration tests)
+# Run tests (lib + bin unit tests; use `just integration-test` for integration tests)
 test *args:
-    cargo nextest run --bin mdkd {{args}}
+    cargo nextest run --lib --bin mdkd {{args}}
 
 # Run the server
 run *args:
