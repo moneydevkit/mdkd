@@ -147,7 +147,7 @@ async fn get_info(State(state): State<AppState>) -> Result<Json<GetInfoResponse>
     security(("basic_auth" = []))
 )]
 async fn get_balance(State(state): State<AppState>) -> Result<Json<GetBalanceResponse>, AppError> {
-    balance::handle_get_balance(state.node).await
+    balance::handle_get_balance(state.mdk_client).await
 }
 
 #[utoipa::path(
