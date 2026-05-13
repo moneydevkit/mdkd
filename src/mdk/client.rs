@@ -15,6 +15,10 @@ use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
 use crate::mdk::error::{MdkError, SpliceError};
+use crate::mdk::max_withdrawable::{
+    compute_estimate, ChannelSnapshot, MaxWithdrawableConfig, MaxWithdrawableError,
+    MaxWithdrawableEstimate,
+};
 use crate::mdk::mdk_api::client::MdkApiClient;
 use crate::mdk::mdk_api::types::{
     CheckoutCustomer, CreateCheckoutRequest, PaymentEntry, PaymentReceivedRequest,
@@ -37,6 +41,7 @@ pub struct MdkClient {
     api: Arc<MdkApiClient>,
     lsp_pubkey: PublicKey,
     splice_cfg: SpliceConfig,
+    max_withdrawable_cfg: MaxWithdrawableConfig,
     event_tx: broadcast::Sender<MdkEvent>,
     event_handler: Option<EventHandler>,
     shutdown: CancellationToken,
@@ -77,6 +82,7 @@ impl MdkClient {
         let lsp_pubkey = PublicKey::from_str(&config.infra.lsp_node_id)
             .map_err(|e| MdkError::InvalidInput(format!("bad lsp_node_id: {e}")))?;
         let splice_cfg = config.splice.clone();
+        let max_withdrawable_cfg = config.max_withdrawable.clone();
 
         let node = build_node(config, handle.clone())?;
         let http_client = build_http_client(socks_proxy.as_deref())?;
@@ -92,6 +98,7 @@ impl MdkClient {
             api,
             lsp_pubkey,
             splice_cfg,
+            max_withdrawable_cfg,
             event_tx,
             event_handler,
             shutdown: CancellationToken::new(),
@@ -135,6 +142,20 @@ impl MdkClient {
 
     pub fn lsp_pubkey(&self) -> PublicKey {
         self.lsp_pubkey
+    }
+
+    /// Best-effort estimate of the largest amount that can flow out
+    /// over Lightning right now, with routing-fee headroom subtracted.
+    /// Computed inline from `node.list_channels()` on every call so
+    /// the result reflects in-flight HTLCs and reserve as of *now*.
+    pub fn max_withdrawable(&self) -> Result<MaxWithdrawableEstimate, MaxWithdrawableError> {
+        let snaps: Vec<ChannelSnapshot> = self
+            .node
+            .list_channels()
+            .iter()
+            .map(ChannelSnapshot::from)
+            .collect();
+        compute_estimate(&snaps, &self.lsp_pubkey, &self.max_withdrawable_cfg)
     }
 
     /// Splice `amount_sats` of confirmed on-chain funds into the

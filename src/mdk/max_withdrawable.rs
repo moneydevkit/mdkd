@@ -5,18 +5,13 @@
 //! buffer (default 1%, 10-sat floor) from the sum of usable LSP
 //! channels' `next_outbound_htlc_limit_msat`. v1 will replace the
 //! buffer with a real `Router::find_route` + per-hop fee inversion.
-//! The [`compute_estimate`] function is the seam — everything around it
-//! (cache, background poll, accessor) stays put across v0→v1.
-
-// The core lands ahead of its consumers (background refresher and
-// MdkClient accessor). Until those land, the items below are
-// unreferenced — silenced module-wide here and remove once the
-// wiring exists.
-#![allow(dead_code)]
+//! The [`compute_estimate`] function is the seam — the accessor that
+//! calls it stays put across v0→v1.
 
 use std::time::Instant;
 
 use ldk_node::bitcoin::secp256k1::PublicKey;
+use ldk_node::ChannelDetails;
 
 /// User-tunable buffer applied to the raw outbound liquidity to
 /// reserve headroom for routing fees.
@@ -71,6 +66,16 @@ pub(crate) struct ChannelSnapshot {
     pub counterparty: PublicKey,
     pub is_usable: bool,
     pub next_outbound_htlc_limit_msat: u64,
+}
+
+impl From<&ChannelDetails> for ChannelSnapshot {
+    fn from(c: &ChannelDetails) -> Self {
+        Self {
+            counterparty: c.counterparty_node_id,
+            is_usable: c.is_usable,
+            next_outbound_htlc_limit_msat: c.next_outbound_htlc_limit_msat,
+        }
+    }
 }
 
 /// Pure compute: given a snapshot of channels, the LSP pubkey, and a
