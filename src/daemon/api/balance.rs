@@ -22,7 +22,7 @@ use crate::daemon::types::GetBalanceResponse;
 /// `onchain_balance_sat` is what the user can actually sweep/send on-chain right now.
 ///
 /// `max_withdrawable_sat` is what `balance_sat` can pay out after subtracting
-/// a routing-fee buffer (see [`mdk::max_withdrawable`]). `None` when no usable
+/// a routing-fee buffer (see [`mdk::max_sendable`]). `None` when no usable
 /// LSP channel exists.
 pub async fn handle_get_balance(
     client: Arc<MdkClient>,
@@ -35,7 +35,7 @@ pub async fn handle_get_balance(
         .map(|ch| ch.outbound_capacity_msat / 1000)
         .sum();
 
-    let max_withdrawable_sat = client.max_withdrawable().ok().map(|e| e.amount_msat / 1000);
+    let max_withdrawable_sat = client.max_sendable().ok().map(|e| e.amount_msat / 1000);
 
     Ok(Json(GetBalanceResponse {
         balance_sat: lightning_sat,

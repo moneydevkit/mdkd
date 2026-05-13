@@ -8,7 +8,7 @@ use ldk_node::bitcoin::Network;
 use ldk_node::lightning::ln::msgs::SocketAddress;
 use ldk_node::lightning::routing::gossip::NodeAlias;
 use log::LevelFilter;
-use mdk::max_withdrawable::MaxWithdrawableConfig;
+use mdk::max_sendable::MaxSendableConfig;
 use mdk::node::ScoringOverrides;
 use serde::Deserialize;
 
@@ -20,7 +20,7 @@ struct TomlConfig {
     storage: Option<StorageSection>,
     log: Option<LogSection>,
     splice: Option<SpliceSection>,
-    max_withdrawable: Option<MaxWithdrawableSection>,
+    max_sendable: Option<MaxSendableSection>,
 }
 
 #[derive(Deserialize)]
@@ -93,7 +93,7 @@ struct SpliceSection {
 }
 
 #[derive(Deserialize)]
-struct MaxWithdrawableSection {
+struct MaxSendableSection {
     fee_buffer_bps: Option<u16>,
     fee_buffer_floor_sats: Option<u64>,
 }
@@ -109,7 +109,7 @@ pub struct MdkConfig {
     pub pathfinding_scores_source_url: Option<String>,
     pub scoring_overrides: ScoringOverrides,
     pub splice: SpliceConfig,
-    pub max_withdrawable: MaxWithdrawableConfig,
+    pub max_sendable: MaxSendableConfig,
 }
 
 pub fn load_config(path: &str) -> io::Result<MdkConfig> {
@@ -182,17 +182,17 @@ pub fn load_config(path: &str) -> io::Result<MdkConfig> {
         None => SpliceConfig::default(),
     };
 
-    let max_withdrawable = match toml.max_withdrawable {
+    let max_sendable = match toml.max_sendable {
         Some(s) => {
-            let defaults = MaxWithdrawableConfig::default();
-            MaxWithdrawableConfig {
+            let defaults = MaxSendableConfig::default();
+            MaxSendableConfig {
                 fee_buffer_bps: s.fee_buffer_bps.unwrap_or(defaults.fee_buffer_bps),
                 fee_buffer_floor_sats: s
                     .fee_buffer_floor_sats
                     .unwrap_or(defaults.fee_buffer_floor_sats),
             }
         }
-        None => MaxWithdrawableConfig::default(),
+        None => MaxSendableConfig::default(),
     };
 
     Ok(MdkConfig {
@@ -206,7 +206,7 @@ pub fn load_config(path: &str) -> io::Result<MdkConfig> {
         pathfinding_scores_source_url: node.pathfinding_scores_source_url,
         scoring_overrides,
         splice,
-        max_withdrawable,
+        max_sendable,
     })
 }
 

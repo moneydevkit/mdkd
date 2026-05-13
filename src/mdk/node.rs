@@ -19,7 +19,7 @@ use log::{info, warn};
 
 use crate::mdk::config::{ChainSource, NetworkInfra};
 use crate::mdk::error::MdkError;
-use crate::mdk::max_withdrawable::MaxWithdrawableConfig;
+use crate::mdk::max_sendable::MaxSendableConfig;
 
 pub struct NodeConfig {
     pub network: Network,
@@ -33,7 +33,7 @@ pub struct NodeConfig {
     pub infra: NetworkInfra,
     pub scoring_overrides: ScoringOverrides,
     pub splice: SpliceConfig,
-    pub max_withdrawable: MaxWithdrawableConfig,
+    pub max_sendable: MaxSendableConfig,
 }
 
 /// Per-field overrides for the probabilistic scorer's fee parameters.

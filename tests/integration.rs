@@ -1382,7 +1382,7 @@ async fn test_auto_splice_after_channel_close_and_reopen() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_max_withdrawable_on_getbalance() {
+async fn test_max_sendable_on_getbalance() {
     let bitcoind = TestBitcoind::new();
     let lsp = LspNode::new(&bitcoind);
     fund_lsp(&bitcoind, &lsp).await;
@@ -1440,7 +1440,7 @@ async fn test_max_withdrawable_on_getbalance() {
 
     // With a usable LSP channel and a positive balance, the accessor
     // must return Some. Defaults are 1% bps / 10-sat floor (see
-    // `MaxWithdrawableConfig::Default`), so the buffer always shaves
+    // `MaxSendableConfig::Default`), so the buffer always shaves
     // at least one sat off the balance.
     let balance: serde_json::Value = server.get("/getbalance").await.json().await.unwrap();
     let balance_sat = balance["balanceSat"].as_u64().unwrap();
