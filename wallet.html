@@ -277,6 +277,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
         <div class="card">
           <h3>Lightning Balance</h3>
           <div class="value" id="dash-ln-balance">—</div>
+          <div id="dash-ln-max" style="font-size:0.85em;color:var(--fg2);margin-top:6px;">Max sendable: —</div>
         </div>
         <div class="card">
           <h3>On-chain Balance</h3>
@@ -641,6 +642,7 @@ async function refreshDashboard() {
     $('#dash-channels').textContent = info.channels.length;
     $('#dash-version').textContent = info.version;
     $('#dash-ln-balance').innerHTML = formatSats(bal.balanceSat) + ' <span class="unit">sats</span>';
+    $('#dash-ln-max').textContent = 'Max sendable: ' + (bal.maxWithdrawableSat == null ? '—' : formatSats(bal.maxWithdrawableSat) + ' sats');
     $('#dash-onchain-balance').innerHTML = formatSats(bal.onchainBalanceSat) + ' <span class="unit">sats</span>';
   } catch (e) {
     console.error('Dashboard refresh failed:', e);
