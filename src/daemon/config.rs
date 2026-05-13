@@ -8,6 +8,7 @@ use ldk_node::bitcoin::Network;
 use ldk_node::lightning::ln::msgs::SocketAddress;
 use ldk_node::lightning::routing::gossip::NodeAlias;
 use log::LevelFilter;
+use mdk::max_withdrawable::MaxWithdrawableConfig;
 use mdk::node::ScoringOverrides;
 use serde::Deserialize;
 
@@ -19,6 +20,7 @@ struct TomlConfig {
     storage: Option<StorageSection>,
     log: Option<LogSection>,
     splice: Option<SpliceSection>,
+    max_withdrawable: Option<MaxWithdrawableSection>,
 }
 
 #[derive(Deserialize)]
@@ -90,6 +92,12 @@ struct SpliceSection {
     poll_interval_secs: Option<u64>,
 }
 
+#[derive(Deserialize)]
+struct MaxWithdrawableSection {
+    fee_buffer_bps: Option<u16>,
+    fee_buffer_floor_sats: Option<u64>,
+}
+
 pub struct MdkConfig {
     pub network: Network,
     pub listening_addrs: Option<Vec<SocketAddress>>,
@@ -101,6 +109,7 @@ pub struct MdkConfig {
     pub pathfinding_scores_source_url: Option<String>,
     pub scoring_overrides: ScoringOverrides,
     pub splice: SpliceConfig,
+    pub max_withdrawable: MaxWithdrawableConfig,
 }
 
 pub fn load_config(path: &str) -> io::Result<MdkConfig> {
@@ -173,6 +182,19 @@ pub fn load_config(path: &str) -> io::Result<MdkConfig> {
         None => SpliceConfig::default(),
     };
 
+    let max_withdrawable = match toml.max_withdrawable {
+        Some(s) => {
+            let defaults = MaxWithdrawableConfig::default();
+            MaxWithdrawableConfig {
+                fee_buffer_bps: s.fee_buffer_bps.unwrap_or(defaults.fee_buffer_bps),
+                fee_buffer_floor_sats: s
+                    .fee_buffer_floor_sats
+                    .unwrap_or(defaults.fee_buffer_floor_sats),
+            }
+        }
+        None => MaxWithdrawableConfig::default(),
+    };
+
     Ok(MdkConfig {
         network,
         listening_addrs,
@@ -184,6 +206,7 @@ pub fn load_config(path: &str) -> io::Result<MdkConfig> {
         pathfinding_scores_source_url: node.pathfinding_scores_source_url,
         scoring_overrides,
         splice,
+        max_withdrawable,
     })
 }
 
