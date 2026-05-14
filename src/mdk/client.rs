@@ -1,6 +1,7 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
+use bitcoin_payment_instructions::PaymentInstructions;
 use chrono::{DateTime, SecondsFormat};
 use ldk_node::bitcoin::hashes::sha256;
 use ldk_node::bitcoin::hashes::Hash as _;
@@ -147,7 +148,18 @@ impl MdkClient {
     /// over Lightning right now, with routing-fee headroom subtracted.
     /// Computed inline from `node.list_channels()` on every call so
     /// the result reflects in-flight HTLCs and reserve as of *now*.
-    pub fn max_sendable(&self) -> Result<MaxSendableEstimate, MaxSendableError> {
+    ///
+    /// `dest` is currently ignored — only the `None` (destination-agnostic
+    /// buffer) path is implemented.
+    pub fn max_sendable(
+        &self,
+        dest: Option<&PaymentInstructions>,
+    ) -> Result<MaxSendableEstimate, MaxSendableError> {
+        debug_assert!(
+            dest.is_none(),
+            "destination-aware max_sendable is not yet implemented"
+        );
+        let _ = dest;
         let snaps: Vec<ChannelSnapshot> = self
             .node
             .list_channels()
