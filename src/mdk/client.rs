@@ -1,6 +1,7 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
+use bitcoin_payment_instructions::http_resolver::HTTPHrnResolver;
 use bitcoin_payment_instructions::PaymentInstructions;
 use chrono::{DateTime, SecondsFormat};
 use ldk_node::bitcoin::hashes::sha256;
@@ -39,6 +40,7 @@ pub type EventHandler = Arc<dyn Fn(MdkEvent) + Send + Sync>;
 pub struct MdkClient {
     node: Arc<Node>,
     api: Arc<MdkApiClient>,
+    http_client: Client,
     lsp_pubkey: PublicKey,
     splice_cfg: SpliceConfig,
     max_sendable_cfg: MaxSendableConfig,
@@ -96,6 +98,7 @@ impl MdkClient {
         Ok(Self {
             node,
             api,
+            http_client,
             lsp_pubkey,
             splice_cfg,
             max_sendable_cfg,
@@ -150,9 +153,11 @@ impl MdkClient {
     /// result reflects in-flight HTLCs and reserve as of *now*.
     ///
     /// `dest = None` returns a buffer-based estimate; `Some(_)`
-    /// drives `Node::find_route` and subtracts the real fees. See
+    /// drives `Node::find_route` and subtracts the real fees. An
+    /// LNURL-pay destination triggers a callback fetch to obtain a
+    /// concrete BOLT11 invoice before routing. See
     /// [`crate::mdk::max_sendable`] for the full dispatch table.
-    pub fn max_sendable(
+    pub async fn max_sendable(
         &self,
         dest: Option<&PaymentInstructions>,
     ) -> Result<MaxSendableEstimate, MaxSendableError> {
@@ -162,13 +167,19 @@ impl MdkClient {
             .iter()
             .map(ChannelSnapshot::from)
             .collect();
+        // `with_client` (not `new`) so LNURL fetches go through the
+        // configured SOCKS proxy. A default `HTTPHrnResolver::new()`
+        // would build its own client and bypass the proxy, leaking IP.
+        let resolver = HTTPHrnResolver::with_client(self.http_client.clone());
         max_sendable::compute_estimate(
             dest,
             &snaps,
             &self.lsp_pubkey,
             &self.max_sendable_cfg,
+            &resolver,
             |rp| self.node.find_route(rp).map_err(|e| format!("{e}")),
         )
+        .await
     }
 
     /// Splice `amount_sats` of confirmed on-chain funds into the

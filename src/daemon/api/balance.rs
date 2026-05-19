@@ -35,7 +35,11 @@ pub async fn handle_get_balance(
         .map(|ch| ch.outbound_capacity_msat / 1000)
         .sum();
 
-    let max_withdrawable_sat = client.max_sendable(None).ok().map(|e| e.amount_msat / 1000);
+    let max_withdrawable_sat = client
+        .max_sendable(None)
+        .await
+        .ok()
+        .map(|e| e.amount_msat / 1000);
 
     Ok(Json(GetBalanceResponse {
         balance_sat: lightning_sat,
