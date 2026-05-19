@@ -147,19 +147,32 @@ where
             match pick_strategy(inst.methods())? {
                 EstimationStrategy::Buffer => Ok(subtract_fee_buffer(balance_msat, cfg)),
                 EstimationStrategy::FromRoute(payment_params) => {
-                    let route_params = RouteParameters::from_payment_params_and_value(
-                        payment_params,
-                        balance_msat,
-                    );
-                    // TODO: Post channel consolidation, consider setting this to one to not use MPP
-                    // route_params.payment_params.max_path_count = 1;
-                    let route =
-                        find_route(route_params).map_err(MaxSendableError::RoutingFailure)?;
-                    Ok(estimate_from_route(balance_msat, &route, cfg))
+                    estimate_via_payment_params(balance_msat, payment_params, cfg, find_route)
                 }
             }
         }
     }
+}
+
+/// Build `RouteParameters` from `payment_params` and `balance_msat`,
+/// call `find_route`, then fold the resulting `Route` into a
+/// `MaxSendableEstimate`. Extracted so the upcoming LNURL-pay branch
+/// of [`compute_estimate`] can reuse the same routing tail after it
+/// fetches the BOLT11 invoice.
+fn estimate_via_payment_params<F>(
+    balance_msat: u64,
+    payment_params: PaymentParameters,
+    cfg: &MaxSendableConfig,
+    find_route: F,
+) -> Result<MaxSendableEstimate, MaxSendableError>
+where
+    F: FnOnce(RouteParameters) -> Result<Route, String>,
+{
+    let route_params = RouteParameters::from_payment_params_and_value(payment_params, balance_msat);
+    // TODO: Post channel consolidation, consider setting this to one to not use MPP
+    // route_params.payment_params.max_path_count = 1;
+    let route = find_route(route_params).map_err(MaxSendableError::RoutingFailure)?;
+    Ok(estimate_from_route(balance_msat, &route, cfg))
 }
 
 /// Subtract the configured fee buffer from a known outbound balance.
