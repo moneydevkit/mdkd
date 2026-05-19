@@ -147,6 +147,14 @@ impl MdkClient {
         self.lsp_pubkey
     }
 
+    /// Shared `reqwest::Client` honouring `socks_proxy`. Hand to
+    /// any HTTP-using crate (e.g. `HTTPHrnResolver::with_client`)
+    /// rather than building a fresh `reqwest::Client` that would
+    /// bypass the proxy.
+    pub fn http_client(&self) -> &Client {
+        &self.http_client
+    }
+
     /// Best-effort estimate of the largest amount that can flow out
     /// over Lightning right now, with routing-fee headroom subtracted.
     /// Recomputed from `node.list_channels()` on every call so the

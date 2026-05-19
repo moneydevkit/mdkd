@@ -62,7 +62,7 @@ pub async fn handle_pay(state: AppState, req: &PayRequest) -> Result<PayResponse
     };
 
     let network = state.node.config().network;
-    let resolver = HTTPHrnResolver::new();
+    let resolver = HTTPHrnResolver::with_client(state.mdk_client.http_client().clone());
     let instructions = PaymentInstructions::parse(req.destination.trim(), network, &resolver, true)
         .await
         .map_err(map_parse_error)?;
