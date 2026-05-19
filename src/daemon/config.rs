@@ -96,6 +96,7 @@ struct SpliceSection {
 struct MaxSendableSection {
     fee_buffer_bps: Option<u16>,
     fee_buffer_floor_sats: Option<u64>,
+    route_retry_fee_multiplier_bps: Option<u16>,
 }
 
 pub struct MdkConfig {
@@ -190,6 +191,9 @@ pub fn load_config(path: &str) -> io::Result<MdkConfig> {
                 fee_buffer_floor_sats: s
                     .fee_buffer_floor_sats
                     .unwrap_or(defaults.fee_buffer_floor_sats),
+                route_retry_fee_multiplier_bps: s
+                    .route_retry_fee_multiplier_bps
+                    .unwrap_or(defaults.route_retry_fee_multiplier_bps),
             }
         }
         None => MaxSendableConfig::default(),
