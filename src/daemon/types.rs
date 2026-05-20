@@ -152,6 +152,12 @@ pub struct GetBalanceResponse {
     pub balance_sat: u64,
     /// Spendable on-chain balance in sats.
     pub onchain_balance_sat: u64,
+    /// Best-effort max sendable over Lightning right now (sats), with
+    /// routing-fee headroom subtracted. `null` when no usable LSP
+    /// channel exists. `Some(0)` is distinct from `null`: it means a
+    /// channel exists but the balance is fully consumed by the fee
+    /// buffer (dust).
+    pub max_withdrawable_sat: Option<u64>,
 }
 
 #[derive(Serialize, ToSchema)]

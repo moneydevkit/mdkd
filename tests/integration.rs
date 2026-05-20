@@ -1382,6 +1382,88 @@ async fn test_auto_splice_after_channel_close_and_reopen() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn test_max_sendable_on_getbalance() {
+    let bitcoind = TestBitcoind::new();
+    let lsp = LspNode::new(&bitcoind);
+    fund_lsp(&bitcoind, &lsp).await;
+
+    let server = MdkdHandle::start(&bitcoind, None, Some(&lsp), &random_mnemonic()).await;
+
+    // No channel yet: `maxWithdrawableSat` must be null, paired with a
+    // zero `balanceSat`. This is the UX invariant the field exists to
+    // preserve (never a positive balance alongside null max).
+    let balance: serde_json::Value = server.get("/getbalance").await.json().await.unwrap();
+    assert_eq!(balance["balanceSat"].as_u64().unwrap(), 0);
+    assert!(
+        balance["maxWithdrawableSat"].is_null(),
+        "Expected null maxWithdrawableSat with no channel, got {balance}"
+    );
+
+    // Open a JIT channel by paying an invoice.
+    let payer = PayerNode::new(&bitcoind);
+    setup_payer_lsp_channel(&bitcoind, &payer, &lsp, 500_000).await;
+
+    let invoice: serde_json::Value = server
+        .post_form(
+            "/createinvoice",
+            &[
+                ("amountSat", "100000"),
+                ("description", "max withdrawable e2e"),
+                ("expirySeconds", "3600"),
+            ],
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let invoice_str = invoice["serialized"].as_str().unwrap();
+    let payment_hash = invoice["paymentHash"].as_str().unwrap().to_string();
+    payer.pay_invoice(invoice_str);
+
+    let start = std::time::Instant::now();
+    loop {
+        let resp: serde_json::Value = server
+            .get(&format!("/payments/incoming/{payment_hash}"))
+            .await
+            .json()
+            .await
+            .unwrap();
+        if resp["isPaid"].as_bool().unwrap() {
+            break;
+        }
+        if start.elapsed() > Duration::from_secs(60) {
+            panic!("Timed out waiting for JIT payment to settle");
+        }
+        bitcoind.mine_blocks(1);
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+
+    // With a usable LSP channel and a positive balance, the accessor
+    // must return Some. Defaults are 1% bps / 10-sat floor (see
+    // `MaxSendableConfig::Default`), so the buffer always shaves
+    // at least one sat off the balance.
+    let balance: serde_json::Value = server.get("/getbalance").await.json().await.unwrap();
+    let balance_sat = balance["balanceSat"].as_u64().unwrap();
+    let max_withdrawable_sat = balance["maxWithdrawableSat"]
+        .as_u64()
+        .unwrap_or_else(|| panic!("Expected Some maxWithdrawableSat, got {balance}"));
+
+    assert!(balance_sat > 0, "Expected positive balanceSat: {balance}");
+    assert!(
+        max_withdrawable_sat < balance_sat,
+        "Buffer must shave at least one sat: balance={balance_sat}, max={max_withdrawable_sat}"
+    );
+    // `balanceSat` derives from `outbound_capacity_msat` while
+    // `maxWithdrawableSat` derives from `next_outbound_htlc_limit_msat`;
+    // the latter can be meaningfully smaller depending on HTLC state.
+    // Use a loose lower bound to keep the assertion stable.
+    assert!(
+        max_withdrawable_sat * 100 >= balance_sat * 90,
+        "max should be within 10% of balance: balance={balance_sat}, max={max_withdrawable_sat}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn test_decodeoffer_invalid() {
     let bitcoind = TestBitcoind::new();
     let server = MdkdHandle::start(&bitcoind, None, None, &random_mnemonic()).await;

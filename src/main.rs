@@ -133,6 +133,7 @@ fn main() {
         infra,
         scoring_overrides: config_file.scoring_overrides,
         splice: config_file.splice,
+        max_sendable: config_file.max_sendable,
     };
 
     // Separate HTTP client for daemon concerns (webhooks, expiry monitor).

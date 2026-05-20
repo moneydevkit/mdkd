@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use axum::Json;
-use ldk_node::Node;
+use mdk::client::MdkClient;
 
 use crate::daemon::api::error::AppError;
 use crate::daemon::types::GetBalanceResponse;
@@ -20,7 +20,14 @@ use crate::daemon::types::GetBalanceResponse;
 /// can be zero even when the channel has a real outbound balance.
 ///
 /// `onchain_balance_sat` is what the user can actually sweep/send on-chain right now.
-pub async fn handle_get_balance(node: Arc<Node>) -> Result<Json<GetBalanceResponse>, AppError> {
+///
+/// `max_withdrawable_sat` is what `balance_sat` can pay out after subtracting
+/// a routing-fee buffer (see [`mdk::max_sendable`]). `None` when no usable
+/// LSP channel exists.
+pub async fn handle_get_balance(
+    client: Arc<MdkClient>,
+) -> Result<Json<GetBalanceResponse>, AppError> {
+    let node = client.node();
     let balances = node.list_balances();
     let lightning_sat: u64 = node
         .list_channels()
@@ -28,8 +35,11 @@ pub async fn handle_get_balance(node: Arc<Node>) -> Result<Json<GetBalanceRespon
         .map(|ch| ch.outbound_capacity_msat / 1000)
         .sum();
 
+    let max_withdrawable_sat = client.max_sendable().ok().map(|e| e.amount_msat / 1000);
+
     Ok(Json(GetBalanceResponse {
         balance_sat: lightning_sat,
         onchain_balance_sat: balances.spendable_onchain_balance_sats,
+        max_withdrawable_sat,
     }))
 }
