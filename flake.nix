@@ -63,6 +63,24 @@
           strictDeps = true;
           nativeBuildInputs = [ pkgs.protobuf ];
           BITCOIND_EXE = "${pkgsUnstable.bitcoind}/bin/bitcoind";
+          outputHashes = {
+            "git+https://github.com/arik-so/rust-musig2?rev=6f95a05718cbb44d8fe3fa6021aea8117aa38d50#6f95a05718cbb44d8fe3fa6021aea8117aa38d50" =
+              "sha256-+ksLhW4rXHDmi6xkPHrWAUdMvkm1cM/PBuJUnTt0vQk=";
+            "git+https://github.com/lightningdevkit/rust-lightning?rev=e9ce486a425933041b319ac72512227353310dc5#e9ce486a425933041b319ac72512227353310dc5" =
+              "sha256-uiZaVn2W3LyEh4TTsp7NN6pIcwJ0rWxkR7eZW6cF/9o=";
+            "git+https://github.com/moneydevkit/bitcoin-payment-instructions?rev=6796e87525d6c564e1332354a808730e2ba2ebf8#6796e87525d6c564e1332354a808730e2ba2ebf8" =
+              "sha256-kJz+7u55DiSy+/7Rpvm9aiB2ZGpds91M3QQ0CzOi9q4=";
+            "git+https://github.com/moneydevkit/bitcoin-payment-instructions?rev=bdcef061488bcc619142010a2a69cd49462d8843#bdcef061488bcc619142010a2a69cd49462d8843" =
+              "sha256-oj2zEt1iTQhK+m/2qXzRMHeZ7a+rm3pAO2ZbQXV1h18=";
+            "git+https://github.com/moneydevkit/ldk-node?rev=e5fcce065fa97c522de0f8fec87beb9e7e541456#e5fcce065fa97c522de0f8fec87beb9e7e541456" =
+              "sha256-LsodimSQabrGNw0vgoVKWC8pBglRJJYFvLqLL2/TIrA=";
+            "git+https://github.com/moneydevkit/ldk-node?rev=f13fcead7e02ef4b77489a83854f204de11e902b#f13fcead7e02ef4b77489a83854f204de11e902b" =
+              "sha256-w1AbC0s3SEuxCVMr0F8Uujw/MG0WyN5afHQK0h0S4Zw=";
+            "git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588#eecf53e7c763e8ae8e436585858db506a7aac588" =
+              "sha256-gRxr9GIIn9fWHhbg/xx2DT4z2CiBS6wVghiIXks/gsI=";
+            "git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72#f56f47fe6c874771cd079faaacf96c42b32fbe72" =
+              "sha256-g4+lUlGQVvURW1zizRQjcHfkFVbSV3jjFsyV3ah/kOo=";
+          };
         };
 
         cargoArtifacts = craneLib.buildDepsOnly commonArgs;
