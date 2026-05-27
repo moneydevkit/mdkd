@@ -2,33 +2,43 @@
 //! out of mdk's LSP channel(s), with routing fees subtracted.
 //!
 //! Entry point: [`compute_estimate`]. The caller collects channel
-//! state and provides a `find_route` closure; this module owns the
-//! `dest` dispatch and the choice between buffer and route-based
-//! estimators.
+//! state and provides a `find_route` closure plus an `HrnResolver`;
+//! this module owns the `dest` dispatch and the choice between
+//! buffer and route-based estimators.
 //!
 //! # Coverage
 //!
-//! | Destination                  | Behaviour                  |
-//! |------------------------------|----------------------------|
-//! | None                         | buffer                     |
-//! | BOLT11, amount set by payee  | `Err(FixedAmount)`         |
-//! | BOLT11, zero-amount          | route-fee estimate         |
-//! | BOLT12 offer                 | buffer (TODO)              |
-//! | LNURL-pay                    | buffer (TODO)              |
-//! | HRN (BIP 353 / LN address)   | buffer (TODO)              |
-//! | Onchain only                 | `Err(NoLightningMethod)`   |
-//! | `find_route` fails           | `Err(RoutingFailure(msg))` |
+//! | Destination                            | Behaviour                       |
+//! |----------------------------------------|---------------------------------|
+//! | None                                   | buffer                          |
+//! | BOLT11, amount set by payee            | `Err(FixedAmount)`              |
+//! | BOLT11, zero-amount                    | route-fee estimate              |
+//! | BOLT12 offer                           | buffer (TODO)                   |
+//! | LNURL-pay, balance >= min_value        | route-fee estimate              |
+//! | LNURL-pay, balance < min_value         | `Err(BelowLnurlMin)`            |
+//! | HRN (BIP 353)                          | dispatches as the resolved BIP  |
+//! |                                        | 321 methods (typically BOLT12)  |
+//! | HRN (LN address) -> LNURL-pay          | as LNURL-pay above              |
+//! | Onchain only                           | `Err(NoLightningMethod)`        |
+//! | `find_route` fails                     | `Err(RoutingFailure(msg))`      |
+//! | LNURL fetch/validation fails           | `Err(LnurlResolutionFailed)`    |
 //!
-//! TODO rows fall back to the buffer rather than overstate. BOLT12
-//! needs a `from_bolt12_invoice` route once the invoice fetch lands
-//! upstream. LNURL-pay and HRN destinations need to be resolved into
-//! a concrete BOLT11/BOLT12 invoice before this module can route
-//! against them; resolution will move into this module shortly.
+//! BOLT12 still falls back to the buffer until `from_bolt12_invoice`
+//! lands upstream. HRNs are resolved at `PaymentInstructions::parse`
+//! time: BIP 353 names resolve to a BIP 321 `bitcoin:` URI carrying
+//! whatever reusable methods the recipient publishes (most commonly
+//! a BOLT12 offer, sometimes BOLT11 or on-chain fallbacks), and
+//! LN-Address names look like LNURL-pay. Whichever method
+//! `pick_strategy` reaches first wins per the iteration order of
+//! `methods()`.
 
 use std::time::Instant;
 
+use bitcoin_payment_instructions::amount::Amount as InstructionAmount;
+use bitcoin_payment_instructions::hrn_resolution::HrnResolver;
 use bitcoin_payment_instructions::{
-    PaymentInstructions, PaymentMethod, PossiblyResolvedPaymentMethod,
+    ConfigurableAmountPaymentInstructions, PaymentInstructions, PaymentMethod,
+    PossiblyResolvedPaymentMethod,
 };
 use ldk_node::bitcoin::secp256k1::PublicKey;
 use ldk_node::lightning_invoice::Bolt11Invoice as LdkBolt11Invoice;
@@ -97,6 +107,15 @@ pub enum MaxSendableError {
     /// `Node::find_route` failed. Lossy on purpose: the caller's
     /// only useful action is to retry or surface "no route".
     RoutingFailure(String),
+    /// LNURL-pay callback fetch, validation, or BOLT11 round-trip
+    /// failed. Wraps the underlying message verbatim.
+    LnurlResolutionFailed(String),
+    /// Current outbound balance is below the LNURL-pay endpoint's
+    /// `min_value`, so no payment is possible. Distinct from
+    /// `Ok(amount_msat = 0)` (dust against the fee buffer) so the
+    /// caller can render a recipient-specific message such as
+    /// "minimum send is N sats".
+    BelowLnurlMin { min_msat: u64, balance_msat: u64 },
 }
 
 /// Minimal projection of `ldk_node::ChannelDetails` carrying only
@@ -120,17 +139,21 @@ impl From<&ChannelDetails> for ChannelSnapshot {
 
 /// Top-level entry point. Picks an [`EstimationStrategy`] for
 /// `dest` and folds the result into a [`MaxSendableEstimate`].
-/// `find_route` is the only effect; everything else is pure
-/// dispatch. See the module-level coverage table.
-pub(crate) fn compute_estimate<F>(
+/// `find_route` and `resolver` are the only effects; everything
+/// else is pure dispatch. `resolver` is invoked only when `dest`
+/// carries an unresolved LNURL-pay endpoint. See the module-level
+/// coverage table.
+pub(crate) async fn compute_estimate<F, R>(
     dest: Option<&PaymentInstructions>,
     channels: &[ChannelSnapshot],
     lsp_pubkey: &PublicKey,
     cfg: &MaxSendableConfig,
+    resolver: &R,
     find_route: F,
 ) -> Result<MaxSendableEstimate, MaxSendableError>
 where
     F: FnOnce(RouteParameters) -> Result<Route, String>,
+    R: HrnResolver,
 {
     let balance_msat = sum_outbound_balance(channels, lsp_pubkey)?;
     match dest {
@@ -144,22 +167,35 @@ where
                 .unwrap_or(0),
         }),
         Some(PaymentInstructions::ConfigurableAmount(inst)) => {
-            match pick_strategy(inst.methods())? {
+            match pick_strategy(inst, balance_msat, resolver).await? {
                 EstimationStrategy::Buffer => Ok(subtract_fee_buffer(balance_msat, cfg)),
                 EstimationStrategy::FromRoute(payment_params) => {
-                    let route_params = RouteParameters::from_payment_params_and_value(
-                        payment_params,
-                        balance_msat,
-                    );
-                    // TODO: Post channel consolidation, consider setting this to one to not use MPP
-                    // route_params.payment_params.max_path_count = 1;
-                    let route =
-                        find_route(route_params).map_err(MaxSendableError::RoutingFailure)?;
-                    Ok(estimate_from_route(balance_msat, &route, cfg))
+                    estimate_via_payment_params(balance_msat, payment_params, cfg, find_route)
                 }
             }
         }
     }
+}
+
+/// Build `RouteParameters` from `payment_params` and `balance_msat`,
+/// call `find_route`, then fold the resulting `Route` into a
+/// `MaxSendableEstimate`. Extracted so the upcoming LNURL-pay branch
+/// of [`compute_estimate`] can reuse the same routing tail after it
+/// fetches the BOLT11 invoice.
+fn estimate_via_payment_params<F>(
+    balance_msat: u64,
+    payment_params: PaymentParameters,
+    cfg: &MaxSendableConfig,
+    find_route: F,
+) -> Result<MaxSendableEstimate, MaxSendableError>
+where
+    F: FnOnce(RouteParameters) -> Result<Route, String>,
+{
+    let route_params = RouteParameters::from_payment_params_and_value(payment_params, balance_msat);
+    // TODO: Post channel consolidation, consider setting this to one to not use MPP
+    // route_params.payment_params.max_path_count = 1;
+    let route = find_route(route_params).map_err(MaxSendableError::RoutingFailure)?;
+    Ok(estimate_from_route(balance_msat, &route, cfg))
 }
 
 /// Subtract the configured fee buffer from a known outbound balance.
@@ -228,32 +264,35 @@ enum EstimationStrategy {
 }
 
 /// Pick the first Lightning method and decide how to price it.
-/// On-chain and unresolved LNURL methods are skipped; an empty
-/// result yields `NoLightningMethod`.
+/// `inst.methods()` yields resolved methods before LNURL, so a
+/// destination carrying both a concrete BOLT11 and an LNURL
+/// fallback prefers the BOLT11. On-chain methods are skipped; an
+/// empty result yields `NoLightningMethod`.
 ///
-/// BOLT11 round-trips through bech32: bitcoin-payment-instructions
-/// pulls upstream rust-lightning's `Bolt11Invoice`, ldk-node pulls
-/// the moneydevkit fork — distinct types in the dep graph,
-/// identical wire format.
-fn pick_strategy<'a, I>(methods: I) -> Result<EstimationStrategy, MaxSendableError>
-where
-    I: IntoIterator<Item = PossiblyResolvedPaymentMethod<'a>>,
-{
-    for method in methods {
+/// LNURL-pay calls `set_amount` for `min(balance, max_value)` to
+/// fetch the actual invoice the payer would receive at the largest
+/// plausible amount, then prices it route-based. Sub-`min_value`
+/// balances short-circuit to `Err(BelowLnurlMin)`.
+async fn pick_strategy<R: HrnResolver>(
+    inst: &ConfigurableAmountPaymentInstructions,
+    balance_msat: u64,
+    resolver: &R,
+) -> Result<EstimationStrategy, MaxSendableError> {
+    for method in inst.methods() {
         match method {
             PossiblyResolvedPaymentMethod::Resolved(PaymentMethod::LightningBolt11(inv)) => {
-                return Ok(match inv.to_string().parse::<LdkBolt11Invoice>() {
-                    Ok(ldk_inv) => EstimationStrategy::FromRoute(
-                        PaymentParameters::from_bolt11_invoice(&ldk_inv),
-                    ),
-                    Err(_) => EstimationStrategy::Buffer,
-                });
+                return Ok(bolt11_to_strategy(&inv.to_string()));
             }
             PossiblyResolvedPaymentMethod::Resolved(PaymentMethod::LightningBolt12(_)) => {
                 return Ok(EstimationStrategy::Buffer);
             }
-            PossiblyResolvedPaymentMethod::LNURLPay { .. } => {
-                return Ok(EstimationStrategy::Buffer);
+            PossiblyResolvedPaymentMethod::LNURLPay {
+                min_value,
+                max_value,
+                ..
+            } => {
+                return resolve_lnurl_strategy(inst, balance_msat, min_value, max_value, resolver)
+                    .await;
             }
             _ => continue,
         }
@@ -261,9 +300,63 @@ where
     Err(MaxSendableError::NoLightningMethod)
 }
 
+/// Round-trip a BOLT11 invoice string into ldk-node's `Bolt11Invoice`
+/// type and wrap it in `PaymentParameters`.
+fn bolt11_to_strategy(bolt11_str: &str) -> EstimationStrategy {
+    match bolt11_str.parse::<LdkBolt11Invoice>() {
+        Ok(ldk_inv) => {
+            EstimationStrategy::FromRoute(PaymentParameters::from_bolt11_invoice(&ldk_inv))
+        }
+        Err(_) => EstimationStrategy::Buffer,
+    }
+}
+
+/// Fetch a concrete BOLT11 invoice for an LNURL-pay endpoint at
+/// `min(balance, max_value)`, then price it route-based.
+async fn resolve_lnurl_strategy<R: HrnResolver>(
+    inst: &ConfigurableAmountPaymentInstructions,
+    balance_msat: u64,
+    min_value: InstructionAmount,
+    max_value: InstructionAmount,
+    resolver: &R,
+) -> Result<EstimationStrategy, MaxSendableError> {
+    let min_msat = min_value.milli_sats();
+    if balance_msat < min_msat {
+        return Err(MaxSendableError::BelowLnurlMin {
+            min_msat,
+            balance_msat,
+        });
+    }
+    let target_msat = balance_msat.min(max_value.milli_sats());
+    let amount = InstructionAmount::from_milli_sats(target_msat).map_err(|_| {
+        MaxSendableError::LnurlResolutionFailed(format!(
+            "target amount {target_msat} msat exceeds Amount bounds"
+        ))
+    })?;
+    let fixed = inst
+        .clone()
+        .set_amount(amount, resolver)
+        .await
+        .map_err(|e| MaxSendableError::LnurlResolutionFailed(e.to_string()))?;
+    let bolt11 = fixed
+        .methods()
+        .iter()
+        .find_map(|m| match m {
+            PaymentMethod::LightningBolt11(inv) => Some(inv),
+            _ => None,
+        })
+        .ok_or_else(|| {
+            MaxSendableError::LnurlResolutionFailed(
+                "LNURL resolution yielded no BOLT11 invoice".into(),
+            )
+        })?;
+    Ok(bolt11_to_strategy(&bolt11.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bitcoin_payment_instructions::hrn_resolution::DummyHrnResolver;
     use ldk_node::lightning::routing::router::{Path, RouteHop};
     use ldk_node::lightning::types::features::{ChannelFeatures, NodeFeatures};
     use std::str::FromStr;
@@ -288,14 +381,17 @@ mod tests {
 
     /// Run the public `compute_estimate` with `dest = None`. The
     /// closure panics if invoked — the None path must never route.
-    fn buffer_estimate(
+    /// Resolver is `DummyHrnResolver` because LNURL is unreachable
+    /// with `dest = None`.
+    async fn buffer_estimate(
         chans: &[ChannelSnapshot],
         lsp: &PublicKey,
         cfg: &MaxSendableConfig,
     ) -> Result<MaxSendableEstimate, MaxSendableError> {
-        compute_estimate(None, chans, lsp, cfg, |_| {
+        compute_estimate(None, chans, lsp, cfg, &DummyHrnResolver, |_| {
             panic!("None dest must not invoke find_route")
         })
+        .await
     }
 
     /// Build a `Route` whose paths carry the given per-hop fee_msat
@@ -324,83 +420,93 @@ mod tests {
         }
     }
 
-    #[test]
-    fn no_usable_channel_when_empty() {
-        let res = buffer_estimate(&[], &lsp(), &MaxSendableConfig::default());
+    #[tokio::test]
+    async fn no_usable_channel_when_empty() {
+        let res = buffer_estimate(&[], &lsp(), &MaxSendableConfig::default()).await;
         assert!(matches!(res, Err(MaxSendableError::NoUsableChannel)));
     }
 
-    #[test]
-    fn no_usable_channel_when_only_other_counterparty() {
+    #[tokio::test]
+    async fn no_usable_channel_when_only_other_counterparty() {
         let lsp = lsp();
         let chans = [snap(other_peer(), true, 100_000_000)];
-        let res = buffer_estimate(&chans, &lsp, &MaxSendableConfig::default());
+        let res = buffer_estimate(&chans, &lsp, &MaxSendableConfig::default()).await;
         assert!(matches!(res, Err(MaxSendableError::NoUsableChannel)));
     }
 
-    #[test]
-    fn no_usable_channel_when_lsp_channel_unusable() {
+    #[tokio::test]
+    async fn no_usable_channel_when_lsp_channel_unusable() {
         // Mid-open/splice — distinct from "balance is zero".
         let lsp = lsp();
         let chans = [snap(lsp, false, 100_000_000)];
-        let res = buffer_estimate(&chans, &lsp, &MaxSendableConfig::default());
+        let res = buffer_estimate(&chans, &lsp, &MaxSendableConfig::default()).await;
         assert!(matches!(res, Err(MaxSendableError::NoUsableChannel)));
     }
 
-    #[test]
-    fn dust_balance_below_floor_returns_zero() {
+    #[tokio::test]
+    async fn dust_balance_below_floor_returns_zero() {
         // 5 sats < 10-sat floor → buffer wins, amount saturates to 0.
         let lsp = lsp();
         let chans = [snap(lsp, true, 5_000)];
-        let est = buffer_estimate(&chans, &lsp, &MaxSendableConfig::default()).unwrap();
+        let est = buffer_estimate(&chans, &lsp, &MaxSendableConfig::default())
+            .await
+            .unwrap();
         assert_eq!(est.amount_msat, 0);
         assert_eq!(est.fee_budget_msat, 10_000);
         assert_eq!(est.balance_at_compute_msat, 5_000);
     }
 
-    #[test]
-    fn balance_exactly_equals_buffer_returns_zero() {
+    #[tokio::test]
+    async fn balance_exactly_equals_buffer_returns_zero() {
         let lsp = lsp();
         let chans = [snap(lsp, true, 10_000)];
-        let est = buffer_estimate(&chans, &lsp, &MaxSendableConfig::default()).unwrap();
+        let est = buffer_estimate(&chans, &lsp, &MaxSendableConfig::default())
+            .await
+            .unwrap();
         assert_eq!(est.amount_msat, 0);
         assert_eq!(est.fee_budget_msat, 10_000);
     }
 
-    #[test]
-    fn normal_case_percentage_buffer_dominates() {
+    #[tokio::test]
+    async fn normal_case_percentage_buffer_dominates() {
         // 100k sats × 1% = 1000 sats > 10-sat floor → percentage wins.
         let lsp = lsp();
         let chans = [snap(lsp, true, 100_000_000)];
-        let est = buffer_estimate(&chans, &lsp, &MaxSendableConfig::default()).unwrap();
+        let est = buffer_estimate(&chans, &lsp, &MaxSendableConfig::default())
+            .await
+            .unwrap();
         assert_eq!(est.fee_budget_msat, 1_000_000);
         assert_eq!(est.amount_msat, 99_000_000);
         assert_eq!(est.balance_at_compute_msat, 100_000_000);
     }
 
-    #[test]
-    fn normal_case_floor_buffer_dominates() {
+    #[tokio::test]
+    async fn normal_case_floor_buffer_dominates() {
         // 500 sats × 1% = 5 sats < 10-sat floor → floor wins.
         let lsp = lsp();
         let chans = [snap(lsp, true, 500_000)];
-        let est = buffer_estimate(&chans, &lsp, &MaxSendableConfig::default()).unwrap();
+        let est = buffer_estimate(&chans, &lsp, &MaxSendableConfig::default())
+            .await
+            .unwrap();
         assert_eq!(est.fee_budget_msat, 10_000);
         assert_eq!(est.amount_msat, 490_000);
     }
 
-    #[test]
-    fn two_usable_lsp_channels_sum() {
+    #[tokio::test]
+    async fn two_usable_lsp_channels_sum() {
         // No single-channel assumption: two usable LSP channels sum.
         let lsp = lsp();
         let chans = [snap(lsp, true, 50_000_000), snap(lsp, true, 30_000_000)];
-        let est = buffer_estimate(&chans, &lsp, &MaxSendableConfig::default()).unwrap();
+        let est = buffer_estimate(&chans, &lsp, &MaxSendableConfig::default())
+            .await
+            .unwrap();
         assert_eq!(est.balance_at_compute_msat, 80_000_000);
         assert_eq!(est.fee_budget_msat, 800_000);
         assert_eq!(est.amount_msat, 79_200_000);
     }
 
-    #[test]
-    fn mixed_channels_only_usable_lsp_contributes() {
+    #[tokio::test]
+    async fn mixed_channels_only_usable_lsp_contributes() {
         // Non-LSP and unusable-LSP entries are filtered out.
         let lsp = lsp();
         let other = other_peer();
@@ -409,14 +515,16 @@ mod tests {
             snap(other, true, 50_000_000),
             snap(lsp, false, 100_000_000),
         ];
-        let est = buffer_estimate(&chans, &lsp, &MaxSendableConfig::default()).unwrap();
+        let est = buffer_estimate(&chans, &lsp, &MaxSendableConfig::default())
+            .await
+            .unwrap();
         assert_eq!(est.balance_at_compute_msat, 10_000_000);
         assert_eq!(est.fee_budget_msat, 100_000);
         assert_eq!(est.amount_msat, 9_900_000);
     }
 
-    #[test]
-    fn overrides_take_effect() {
+    #[tokio::test]
+    async fn overrides_take_effect() {
         let lsp = lsp();
         let chans = [snap(lsp, true, 1_000_000_000)];
         let cfg = MaxSendableConfig {
@@ -424,7 +532,7 @@ mod tests {
             fee_buffer_floor_sats: 50,
             ..MaxSendableConfig::default()
         };
-        let est = buffer_estimate(&chans, &lsp, &cfg).unwrap();
+        let est = buffer_estimate(&chans, &lsp, &cfg).await.unwrap();
         assert_eq!(est.fee_budget_msat, 20_000_000);
         assert_eq!(est.amount_msat, 980_000_000);
     }
