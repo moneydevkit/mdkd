@@ -16,7 +16,7 @@ demo = []
 
 [dependencies]
 # Branch: https://github.com/moneydevkit/ldk-node/tree/lsp-0.7.0_accept-underpaying-htlcs_with_timing_logs
-ldk-node = { git = "https://github.com/moneydevkit/ldk-node", rev = "5dce44b6e795560bbf62f49d3648308ce88a0586" }
+ldk-node = { git = "https://github.com/moneydevkit/ldk-node", rev = "f13fcead7e02ef4b77489a83854f204de11e902b" }
 
 # Pinned to the same git rev as ldk-node's transitive pull to avoid duplicate
 # crate compilation. Verify with `cargo tree -d | grep bitcoin-payment-instructions`.
