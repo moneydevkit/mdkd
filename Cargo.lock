@@ -1428,7 +1428,7 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 [[package]]
 name = "ldk-node"
 version = "0.7.0"
-source = "git+https://github.com/moneydevkit/ldk-node?rev=e5fcce065fa97c522de0f8fec87beb9e7e541456#e5fcce065fa97c522de0f8fec87beb9e7e541456"
+source = "git+https://github.com/moneydevkit/ldk-node?rev=48cb27f8179fa7c468ed50894821036a6d1153e0#48cb27f8179fa7c468ed50894821036a6d1153e0"
 dependencies = [
  "base64 0.22.1",
  "bdk_chain",
@@ -1438,22 +1438,22 @@ dependencies = [
  "bip21",
  "bip39",
  "bitcoin",
- "bitcoin-payment-instructions 0.6.0 (git+https://github.com/moneydevkit/bitcoin-payment-instructions?rev=6796e87525d6c564e1332354a808730e2ba2ebf8)",
+ "bitcoin-payment-instructions 0.6.0 (git+https://github.com/moneydevkit/bitcoin-payment-instructions?rev=bdcef061488bcc619142010a2a69cd49462d8843)",
  "chrono",
  "electrum-client",
  "esplora-client",
  "libc",
- "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
- "lightning-background-processor 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
- "lightning-block-sync 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
- "lightning-invoice 0.34.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
- "lightning-liquidity 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
- "lightning-macros 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
- "lightning-net-tokio 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
- "lightning-persister 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
- "lightning-rapid-gossip-sync 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
- "lightning-transaction-sync 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
- "lightning-types 0.3.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
+ "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
+ "lightning-background-processor 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
+ "lightning-block-sync 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
+ "lightning-invoice 0.34.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
+ "lightning-liquidity 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
+ "lightning-macros 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
+ "lightning-net-tokio 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
+ "lightning-persister 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
+ "lightning-rapid-gossip-sync 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
+ "lightning-transaction-sync 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
+ "lightning-types 0.3.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
  "log",
  "prost",
  "rand 0.9.2",
@@ -1470,7 +1470,7 @@ dependencies = [
 [[package]]
 name = "ldk-node"
 version = "0.7.0"
-source = "git+https://github.com/moneydevkit/ldk-node?rev=f13fcead7e02ef4b77489a83854f204de11e902b#f13fcead7e02ef4b77489a83854f204de11e902b"
+source = "git+https://github.com/moneydevkit/ldk-node?rev=b0dee519b49d756ac65d18571f2286574c16cc60#b0dee519b49d756ac65d18571f2286574c16cc60"
 dependencies = [
  "base64 0.22.1",
  "bdk_chain",
@@ -1480,22 +1480,22 @@ dependencies = [
  "bip21",
  "bip39",
  "bitcoin",
- "bitcoin-payment-instructions 0.6.0 (git+https://github.com/moneydevkit/bitcoin-payment-instructions?rev=bdcef061488bcc619142010a2a69cd49462d8843)",
+ "bitcoin-payment-instructions 0.6.0 (git+https://github.com/moneydevkit/bitcoin-payment-instructions?rev=6796e87525d6c564e1332354a808730e2ba2ebf8)",
  "chrono",
  "electrum-client",
  "esplora-client",
  "libc",
- "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
- "lightning-background-processor 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
- "lightning-block-sync 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
- "lightning-invoice 0.34.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
- "lightning-liquidity 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
- "lightning-macros 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
- "lightning-net-tokio 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
- "lightning-persister 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
- "lightning-rapid-gossip-sync 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
- "lightning-transaction-sync 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
- "lightning-types 0.3.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
+ "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
+ "lightning-background-processor 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
+ "lightning-block-sync 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
+ "lightning-invoice 0.34.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
+ "lightning-liquidity 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
+ "lightning-macros 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
+ "lightning-net-tokio 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
+ "lightning-persister 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
+ "lightning-rapid-gossip-sync 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
+ "lightning-transaction-sync 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
+ "lightning-types 0.3.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
  "log",
  "prost",
  "rand 0.9.2",
@@ -1541,35 +1541,35 @@ dependencies = [
 [[package]]
 name = "lightning"
 version = "0.2.0"
-source = "git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588#eecf53e7c763e8ae8e436585858db506a7aac588"
+source = "git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e#9b5f40f00a623ff5e1cbe2540d79c3665589be6e"
 dependencies = [
  "bech32",
  "bitcoin",
  "dnssec-prover",
  "hashbrown 0.13.2",
  "libm",
- "lightning-invoice 0.34.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
- "lightning-macros 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
- "lightning-types 0.3.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
+ "lightning-invoice 0.34.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
+ "lightning-macros 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
+ "lightning-types 0.3.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
  "musig2",
- "possiblyrandom 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
+ "possiblyrandom 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
 ]
 
 [[package]]
 name = "lightning"
 version = "0.2.0"
-source = "git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72#f56f47fe6c874771cd079faaacf96c42b32fbe72"
+source = "git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d#bdcdf57de38baeabce4bf8486769bc60d0aa0f8d"
 dependencies = [
  "bech32",
  "bitcoin",
  "dnssec-prover",
  "hashbrown 0.13.2",
  "libm",
- "lightning-invoice 0.34.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
- "lightning-macros 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
- "lightning-types 0.3.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
+ "lightning-invoice 0.34.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
+ "lightning-macros 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
+ "lightning-types 0.3.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
  "musig2",
- "possiblyrandom 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
+ "possiblyrandom 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
 ]
 
 [[package]]
@@ -1592,39 +1592,39 @@ dependencies = [
 [[package]]
 name = "lightning-background-processor"
 version = "0.2.0"
-source = "git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588#eecf53e7c763e8ae8e436585858db506a7aac588"
+source = "git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e#9b5f40f00a623ff5e1cbe2540d79c3665589be6e"
 dependencies = [
  "bitcoin",
  "bitcoin-io",
  "bitcoin_hashes",
- "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
- "lightning-liquidity 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
- "lightning-rapid-gossip-sync 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
- "possiblyrandom 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
+ "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
+ "lightning-liquidity 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
+ "lightning-rapid-gossip-sync 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
+ "possiblyrandom 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
 ]
 
 [[package]]
 name = "lightning-background-processor"
 version = "0.2.0"
-source = "git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72#f56f47fe6c874771cd079faaacf96c42b32fbe72"
+source = "git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d#bdcdf57de38baeabce4bf8486769bc60d0aa0f8d"
 dependencies = [
  "bitcoin",
  "bitcoin-io",
  "bitcoin_hashes",
- "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
- "lightning-liquidity 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
- "lightning-rapid-gossip-sync 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
- "possiblyrandom 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
+ "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
+ "lightning-liquidity 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
+ "lightning-rapid-gossip-sync 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
+ "possiblyrandom 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
 ]
 
 [[package]]
 name = "lightning-block-sync"
 version = "0.2.0"
-source = "git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588#eecf53e7c763e8ae8e436585858db506a7aac588"
+source = "git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e#9b5f40f00a623ff5e1cbe2540d79c3665589be6e"
 dependencies = [
  "bitcoin",
  "chunked_transfer",
- "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
+ "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
  "serde_json",
  "tokio",
 ]
@@ -1632,11 +1632,11 @@ dependencies = [
 [[package]]
 name = "lightning-block-sync"
 version = "0.2.0"
-source = "git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72#f56f47fe6c874771cd079faaacf96c42b32fbe72"
+source = "git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d#bdcdf57de38baeabce4bf8486769bc60d0aa0f8d"
 dependencies = [
  "bitcoin",
  "chunked_transfer",
- "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
+ "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
  "serde_json",
  "tokio",
 ]
@@ -1644,22 +1644,22 @@ dependencies = [
 [[package]]
 name = "lightning-invoice"
 version = "0.34.0"
-source = "git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588#eecf53e7c763e8ae8e436585858db506a7aac588"
+source = "git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e#9b5f40f00a623ff5e1cbe2540d79c3665589be6e"
 dependencies = [
  "bech32",
  "bitcoin",
- "lightning-types 0.3.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
+ "lightning-types 0.3.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
  "serde",
 ]
 
 [[package]]
 name = "lightning-invoice"
 version = "0.34.0"
-source = "git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72#f56f47fe6c874771cd079faaacf96c42b32fbe72"
+source = "git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d#bdcdf57de38baeabce4bf8486769bc60d0aa0f8d"
 dependencies = [
  "bech32",
  "bitcoin",
- "lightning-types 0.3.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
+ "lightning-types 0.3.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
  "serde",
 ]
 
@@ -1676,14 +1676,14 @@ dependencies = [
 [[package]]
 name = "lightning-liquidity"
 version = "0.2.0"
-source = "git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588#eecf53e7c763e8ae8e436585858db506a7aac588"
+source = "git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e#9b5f40f00a623ff5e1cbe2540d79c3665589be6e"
 dependencies = [
  "bitcoin",
  "chrono",
- "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
- "lightning-invoice 0.34.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
- "lightning-macros 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
- "lightning-types 0.3.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
+ "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
+ "lightning-invoice 0.34.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
+ "lightning-macros 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
+ "lightning-types 0.3.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
  "serde",
  "serde_json",
 ]
@@ -1691,14 +1691,14 @@ dependencies = [
 [[package]]
 name = "lightning-liquidity"
 version = "0.2.0"
-source = "git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72#f56f47fe6c874771cd079faaacf96c42b32fbe72"
+source = "git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d#bdcdf57de38baeabce4bf8486769bc60d0aa0f8d"
 dependencies = [
  "bitcoin",
  "chrono",
- "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
- "lightning-invoice 0.34.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
- "lightning-macros 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
- "lightning-types 0.3.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
+ "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
+ "lightning-invoice 0.34.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
+ "lightning-macros 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
+ "lightning-types 0.3.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
  "serde",
  "serde_json",
 ]
@@ -1706,7 +1706,7 @@ dependencies = [
 [[package]]
 name = "lightning-macros"
 version = "0.2.0"
-source = "git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588#eecf53e7c763e8ae8e436585858db506a7aac588"
+source = "git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e#9b5f40f00a623ff5e1cbe2540d79c3665589be6e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1716,7 +1716,7 @@ dependencies = [
 [[package]]
 name = "lightning-macros"
 version = "0.2.0"
-source = "git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72#f56f47fe6c874771cd079faaacf96c42b32fbe72"
+source = "git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d#bdcdf57de38baeabce4bf8486769bc60d0aa0f8d"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1736,31 +1736,31 @@ dependencies = [
 [[package]]
 name = "lightning-net-tokio"
 version = "0.2.0"
-source = "git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588#eecf53e7c763e8ae8e436585858db506a7aac588"
+source = "git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e#9b5f40f00a623ff5e1cbe2540d79c3665589be6e"
 dependencies = [
  "bitcoin",
- "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
- "tokio",
-]
-
-[[package]]
-name = "lightning-net-tokio"
-version = "0.2.0"
-source = "git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72#f56f47fe6c874771cd079faaacf96c42b32fbe72"
-dependencies = [
- "bitcoin",
- "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
+ "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
  "tokio",
  "tokio-socks",
 ]
 
 [[package]]
-name = "lightning-persister"
+name = "lightning-net-tokio"
 version = "0.2.0"
-source = "git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588#eecf53e7c763e8ae8e436585858db506a7aac588"
+source = "git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d#bdcdf57de38baeabce4bf8486769bc60d0aa0f8d"
 dependencies = [
  "bitcoin",
- "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
+ "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
+ "tokio",
+]
+
+[[package]]
+name = "lightning-persister"
+version = "0.2.0"
+source = "git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e#9b5f40f00a623ff5e1cbe2540d79c3665589be6e"
+dependencies = [
+ "bitcoin",
+ "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
  "tokio",
  "windows-sys 0.48.0",
 ]
@@ -1768,10 +1768,10 @@ dependencies = [
 [[package]]
 name = "lightning-persister"
 version = "0.2.0"
-source = "git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72#f56f47fe6c874771cd079faaacf96c42b32fbe72"
+source = "git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d#bdcdf57de38baeabce4bf8486769bc60d0aa0f8d"
 dependencies = [
  "bitcoin",
- "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
+ "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
  "tokio",
  "windows-sys 0.48.0",
 ]
@@ -1779,55 +1779,55 @@ dependencies = [
 [[package]]
 name = "lightning-rapid-gossip-sync"
 version = "0.2.0"
-source = "git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588#eecf53e7c763e8ae8e436585858db506a7aac588"
+source = "git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e#9b5f40f00a623ff5e1cbe2540d79c3665589be6e"
 dependencies = [
  "bitcoin",
  "bitcoin-io",
  "bitcoin_hashes",
- "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
+ "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
 ]
 
 [[package]]
 name = "lightning-rapid-gossip-sync"
 version = "0.2.0"
-source = "git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72#f56f47fe6c874771cd079faaacf96c42b32fbe72"
+source = "git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d#bdcdf57de38baeabce4bf8486769bc60d0aa0f8d"
 dependencies = [
  "bitcoin",
  "bitcoin-io",
  "bitcoin_hashes",
- "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
+ "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
 ]
 
 [[package]]
 name = "lightning-transaction-sync"
 version = "0.2.0"
-source = "git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588#eecf53e7c763e8ae8e436585858db506a7aac588"
+source = "git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e#9b5f40f00a623ff5e1cbe2540d79c3665589be6e"
 dependencies = [
  "bitcoin",
  "electrum-client",
  "esplora-client",
  "futures",
- "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
- "lightning-macros 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588)",
+ "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
+ "lightning-macros 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e)",
 ]
 
 [[package]]
 name = "lightning-transaction-sync"
 version = "0.2.0"
-source = "git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72#f56f47fe6c874771cd079faaacf96c42b32fbe72"
+source = "git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d#bdcdf57de38baeabce4bf8486769bc60d0aa0f8d"
 dependencies = [
  "bitcoin",
  "electrum-client",
  "esplora-client",
  "futures",
- "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
- "lightning-macros 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72)",
+ "lightning 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
+ "lightning-macros 0.2.0 (git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d)",
 ]
 
 [[package]]
 name = "lightning-types"
 version = "0.3.0"
-source = "git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588#eecf53e7c763e8ae8e436585858db506a7aac588"
+source = "git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e#9b5f40f00a623ff5e1cbe2540d79c3665589be6e"
 dependencies = [
  "bitcoin",
 ]
@@ -1835,7 +1835,7 @@ dependencies = [
 [[package]]
 name = "lightning-types"
 version = "0.3.0"
-source = "git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72#f56f47fe6c874771cd079faaacf96c42b32fbe72"
+source = "git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d#bdcdf57de38baeabce4bf8486769bc60d0aa0f8d"
 dependencies = [
  "bitcoin",
 ]
@@ -1908,8 +1908,8 @@ dependencies = [
  "hex-conservative",
  "hmac",
  "http-body-util",
- "ldk-node 0.7.0 (git+https://github.com/moneydevkit/ldk-node?rev=e5fcce065fa97c522de0f8fec87beb9e7e541456)",
- "ldk-node 0.7.0 (git+https://github.com/moneydevkit/ldk-node?rev=f13fcead7e02ef4b77489a83854f204de11e902b)",
+ "ldk-node 0.7.0 (git+https://github.com/moneydevkit/ldk-node?rev=48cb27f8179fa7c468ed50894821036a6d1153e0)",
+ "ldk-node 0.7.0 (git+https://github.com/moneydevkit/ldk-node?rev=b0dee519b49d756ac65d18571f2286574c16cc60)",
  "log",
  "reqwest 0.13.1",
  "rusqlite",
@@ -2095,23 +2095,23 @@ checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 [[package]]
 name = "possiblyrandom"
 version = "0.2.0"
+source = "git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e#9b5f40f00a623ff5e1cbe2540d79c3665589be6e"
+dependencies = [
+ "getrandom 0.2.17",
+]
+
+[[package]]
+name = "possiblyrandom"
+version = "0.2.0"
+source = "git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d#bdcdf57de38baeabce4bf8486769bc60d0aa0f8d"
+dependencies = [
+ "getrandom 0.2.17",
+]
+
+[[package]]
+name = "possiblyrandom"
+version = "0.2.0"
 source = "git+https://github.com/lightningdevkit/rust-lightning?rev=e9ce486a425933041b319ac72512227353310dc5#e9ce486a425933041b319ac72512227353310dc5"
-dependencies = [
- "getrandom 0.2.17",
-]
-
-[[package]]
-name = "possiblyrandom"
-version = "0.2.0"
-source = "git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588#eecf53e7c763e8ae8e436585858db506a7aac588"
-dependencies = [
- "getrandom 0.2.17",
-]
-
-[[package]]
-name = "possiblyrandom"
-version = "0.2.0"
-source = "git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72#f56f47fe6c874771cd079faaacf96c42b32fbe72"
 dependencies = [
  "getrandom 0.2.17",
 ]

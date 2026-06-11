@@ -16,7 +16,7 @@ demo = []
 
 [dependencies]
 # Branch: https://github.com/moneydevkit/ldk-node/tree/lsp-0.7.0_accept-underpaying-htlcs_with_timing_logs
-ldk-node = { git = "https://github.com/moneydevkit/ldk-node", rev = "f13fcead7e02ef4b77489a83854f204de11e902b" }
+ldk-node = { git = "https://github.com/moneydevkit/ldk-node", rev = "48cb27f8179fa7c468ed50894821036a6d1153e0" }
 
 # Pinned to the same git rev as ldk-node's transitive pull to avoid duplicate
 # crate compilation. Verify with `cargo tree -d | grep bitcoin-payment-instructions`.
@@ -45,7 +45,7 @@ base64 = "0.22"
 corepc-node = { version = "0.10", features = ["29_0"] }
 futures-util = "0.3"
 http-body-util = "0.1.3"
-ldk-node-lsp = { package = "ldk-node", git = "https://github.com/moneydevkit/ldk-node", rev = "e5fcce065fa97c522de0f8fec87beb9e7e541456" }
+ldk-node-lsp = { package = "ldk-node", git = "https://github.com/moneydevkit/ldk-node", rev = "b0dee519b49d756ac65d18571f2286574c16cc60" }
 tempfile = "3"
 tokio-tungstenite = "0.26"
 tower = "0.5.3"

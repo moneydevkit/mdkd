@@ -72,14 +72,14 @@
               "sha256-kJz+7u55DiSy+/7Rpvm9aiB2ZGpds91M3QQ0CzOi9q4=";
             "git+https://github.com/moneydevkit/bitcoin-payment-instructions?rev=bdcef061488bcc619142010a2a69cd49462d8843#bdcef061488bcc619142010a2a69cd49462d8843" =
               "sha256-oj2zEt1iTQhK+m/2qXzRMHeZ7a+rm3pAO2ZbQXV1h18=";
-            "git+https://github.com/moneydevkit/ldk-node?rev=e5fcce065fa97c522de0f8fec87beb9e7e541456#e5fcce065fa97c522de0f8fec87beb9e7e541456" =
-              "sha256-LsodimSQabrGNw0vgoVKWC8pBglRJJYFvLqLL2/TIrA=";
-            "git+https://github.com/moneydevkit/ldk-node?rev=f13fcead7e02ef4b77489a83854f204de11e902b#f13fcead7e02ef4b77489a83854f204de11e902b" =
-              "sha256-w1AbC0s3SEuxCVMr0F8Uujw/MG0WyN5afHQK0h0S4Zw=";
-            "git+https://github.com/moneydevkit/rust-lightning?rev=eecf53e7c763e8ae8e436585858db506a7aac588#eecf53e7c763e8ae8e436585858db506a7aac588" =
-              "sha256-gRxr9GIIn9fWHhbg/xx2DT4z2CiBS6wVghiIXks/gsI=";
-            "git+https://github.com/moneydevkit/rust-lightning?rev=f56f47fe6c874771cd079faaacf96c42b32fbe72#f56f47fe6c874771cd079faaacf96c42b32fbe72" =
-              "sha256-g4+lUlGQVvURW1zizRQjcHfkFVbSV3jjFsyV3ah/kOo=";
+            "git+https://github.com/moneydevkit/ldk-node?rev=b0dee519b49d756ac65d18571f2286574c16cc60#b0dee519b49d756ac65d18571f2286574c16cc60" =
+              "sha256-dJam/azTnxC08hiLtNE/5CYp5UWdAJkQnBy6czwFraA=";
+            "git+https://github.com/moneydevkit/ldk-node?rev=48cb27f8179fa7c468ed50894821036a6d1153e0#48cb27f8179fa7c468ed50894821036a6d1153e0" =
+              "sha256-nSk5PZIN/GrEPDUYt/dsLGmhwY0cneX2DSla6qlXrKE=";
+            "git+https://github.com/moneydevkit/rust-lightning?rev=bdcdf57de38baeabce4bf8486769bc60d0aa0f8d#bdcdf57de38baeabce4bf8486769bc60d0aa0f8d" =
+              "sha256-9IDjszL8KOPsTUiOIAy2nU2DTvUaOGDMIutjIYjfc2M=";
+            "git+https://github.com/moneydevkit/rust-lightning?rev=9b5f40f00a623ff5e1cbe2540d79c3665589be6e#9b5f40f00a623ff5e1cbe2540d79c3665589be6e" =
+              "sha256-UB1MxvE88orgXTEGxyIzalJ7NLP9n4B66Gm07wHF/DM=";
           };
         };
 
