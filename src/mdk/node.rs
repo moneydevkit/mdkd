@@ -29,6 +29,7 @@ pub struct NodeConfig {
     pub alias: Option<String>,
     pub socks_proxy: Option<String>,
     pub pathfinding_scores_source_url: Option<String>,
+    pub fee_claim: Option<String>,
     pub mnemonic: String,
     pub infra: NetworkInfra,
     pub scoring_overrides: ScoringOverrides,
@@ -168,7 +169,7 @@ pub fn build_node(
         .map_err(|e| MdkError::InvalidInput(format!("bad lsp_node_id: {e}")))?;
     let lsp_addr = SocketAddress::from_str(&infra.lsp_address)
         .map_err(|e| MdkError::InvalidInput(format!("bad lsp_address: {e}")))?;
-    builder.set_liquidity_source_lsps4(lsp_pubkey, lsp_addr);
+    builder.set_liquidity_source_lsps4(lsp_pubkey, lsp_addr, config.fee_claim);
     info!("LSPS4 liquidity source: {}", infra.lsp_node_id);
 
     builder.set_runtime(runtime);

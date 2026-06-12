@@ -31,6 +31,7 @@ struct NodeSection {
     rest_service_address: Option<String>,
     alias: Option<String>,
     pathfinding_scores_source_url: Option<String>,
+    fee_claim: Option<String>,
     scoring: Option<ScoringSection>,
 }
 
@@ -108,6 +109,7 @@ pub struct MdkConfig {
     pub storage_dir_path: Option<String>,
     pub log_level: LevelFilter,
     pub pathfinding_scores_source_url: Option<String>,
+    pub fee_claim: Option<String>,
     pub scoring_overrides: ScoringOverrides,
     pub splice: SpliceConfig,
     pub max_sendable: MaxSendableConfig,
@@ -208,6 +210,7 @@ pub fn load_config(path: &str) -> io::Result<MdkConfig> {
         storage_dir_path,
         log_level,
         pathfinding_scores_source_url: node.pathfinding_scores_source_url,
+        fee_claim: node.fee_claim,
         scoring_overrides,
         splice,
         max_sendable,

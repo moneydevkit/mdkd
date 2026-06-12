@@ -14,6 +14,7 @@ use ldk_node::lightning::ln::msgs::SocketAddress;
 use ldk_node::lightning_invoice::Bolt11Invoice;
 use ldk_node::{Builder, Node};
 
+use ldk_node_lsp::bitcoin::secp256k1::XOnlyPublicKey;
 use ldk_node_lsp::config::Config as LspNodeConfig;
 use ldk_node_lsp::lightning::ln::msgs::SocketAddress as LspSocketAddress;
 use ldk_node_lsp::liquidity::LSPS4ServiceConfig;
@@ -89,11 +90,14 @@ pub struct MdkdHandle {
 }
 
 impl MdkdHandle {
+    /// `fee_claim`, when set, is written into the `[node]` section of the generated config.toml
+    /// so the node presents a signed fee-policy grant on `register_node`. `None` omits the key.
     pub async fn start(
         bitcoind: &TestBitcoind,
         webhook_port: Option<u16>,
         lsp: Option<&LspNode>,
         mnemonic: &str,
+        fee_claim: Option<&str>,
     ) -> Self {
         #[allow(deprecated)]
         let storage_dir = tempfile::tempdir().unwrap().into_path();
@@ -120,12 +124,15 @@ impl MdkdHandle {
         let http_password_full = "test_full_password";
         let http_password_read_only = "test_readonly_password";
 
+        let fee_claim_line = fee_claim
+            .map(|claim| format!("fee_claim = \"{claim}\"\n"))
+            .unwrap_or_default();
         let config = format!(
             r#"[node]
 network = "regtest"
 listening_addresses = ["127.0.0.1:{p2p_port}"]
 rest_service_address = "127.0.0.1:{api_port}"
-
+{fee_claim_line}
 [storage.disk]
 dir_path = "{storage_dir}"
 
@@ -375,6 +382,12 @@ pub struct LspNode {
 
 impl LspNode {
     pub fn new(bitcoind: &TestBitcoind) -> Self {
+        Self::with_issuer_keys(bitcoind, vec![])
+    }
+
+    /// Stand up the LSP trusting `issuer_pubkeys` to grant non-standard fee policies via a signed
+    /// `MDK_FEE_CLAIM`. An empty set (the default `new`) keeps every node on the standard 2% skim.
+    pub fn with_issuer_keys(bitcoind: &TestBitcoind, issuer_pubkeys: Vec<XOnlyPublicKey>) -> Self {
         #[allow(deprecated)]
         let storage_dir = tempfile::tempdir().unwrap().into_path();
         let p2p_port = find_available_port();
@@ -401,6 +414,7 @@ impl LspNode {
             channel_over_provisioning_ppm: 500_000,
             forwarding_fee_proportional_millionths: 20_000,
             channel_size_tiers: vec![],
+            issuer_pubkeys,
         });
 
         let node = Arc::new(builder.build().unwrap());
@@ -700,6 +714,11 @@ pub fn random_mnemonic() -> String {
     Mnemonic::generate(12)
         .expect("12-word mnemonic")
         .to_string()
+}
+
+/// Parse a 32-byte x-only public key from hex, for configuring the LSP's trusted issuer set.
+pub fn xonly_from_hex(hex: &str) -> XOnlyPublicKey {
+    XOnlyPublicKey::from_str(hex).expect("valid x-only pubkey hex")
 }
 
 // ---------------------------------------------------------------------------

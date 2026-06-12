@@ -129,6 +129,12 @@ fn main() {
         alias: config_file.alias.map(|a| a.to_string()),
         socks_proxy: socks_proxy.clone(),
         pathfinding_scores_source_url: config_file.pathfinding_scores_source_url,
+        // config.toml is the documented surface; MDK_FEE_CLAIM is an undocumented fallback for
+        // deployments that inject config through the environment (the open-money container, whose
+        // only runtime seam is env vars and whose baked config.toml cannot carry a per-wallet claim).
+        fee_claim: config_file
+            .fee_claim
+            .or_else(|| std::env::var("MDK_FEE_CLAIM").ok()),
         mnemonic: mnemonic_phrase,
         infra,
         scoring_overrides: config_file.scoring_overrides,
