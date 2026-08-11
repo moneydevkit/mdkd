@@ -221,7 +221,7 @@ pub async fn handle_list_outgoing_payments(
     }
 
     // Newest first.
-    payments.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    payments.sort_by_key(|p| std::cmp::Reverse(p.created_at));
 
     let page = payments.into_iter().skip(offset).take(limit).collect();
     Ok(Json(page))
